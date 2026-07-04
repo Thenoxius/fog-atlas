@@ -2,6 +2,8 @@
 // map images, fog masks, and thumbnails are stored as blobs on this
 // device only — nothing ever leaves the machine.
 
+export type GridType = 'none' | 'hex' | 'square';
+
 export interface MapRecord {
   id: string;
   name: string;
@@ -15,6 +17,13 @@ export interface MapRecord {
   fog: Blob | null;
   /** Small JPEG preview for the library grid. */
   thumbnail: Blob;
+  /** Grid overlay settings; absent on maps saved before the feature existed. */
+  gridType?: GridType;
+  /** Cell size in map pixels (hex width / square side). */
+  gridSize?: number;
+  /** Grid translation in map pixels, to align the overlay with a grid baked into the map art. */
+  gridOffsetX?: number;
+  gridOffsetY?: number;
 }
 
 const DB_NAME = 'fog-atlas';
@@ -74,6 +83,21 @@ export async function saveFog(id: string, fog: Blob | null): Promise<void> {
   const record = await getMap(id);
   if (!record) throw new Error('Map not found');
   record.fog = fog;
+  record.updatedAt = Date.now();
+  await withStore('readwrite', (s) => s.put(record));
+}
+
+export interface GridSettings {
+  gridType: GridType;
+  gridSize: number;
+  gridOffsetX: number;
+  gridOffsetY: number;
+}
+
+export async function saveGridSettings(id: string, settings: GridSettings): Promise<void> {
+  const record = await getMap(id);
+  if (!record) throw new Error('Map not found');
+  Object.assign(record, settings);
   record.updatedAt = Date.now();
   await withStore('readwrite', (s) => s.put(record));
 }

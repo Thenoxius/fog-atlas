@@ -12,7 +12,8 @@ A fully local fog-of-war map tool for dungeon masters. Import your campaign maps
    - **Fog all** covers the entire map; **Clear fog** removes everything
    - Adjustable brush size and fog opacity (see through the fog while you prep)
    - Undo (Ctrl+Z), pan (Space/right-drag), zoom (scroll), fit (0)
-4. **Take it to the session**: fog is autosaved (and via Ctrl+S / the Save button). When you reopen a map it is exactly in the state you left it.
+4. **Grid overlay** (G): project a honeycomb (hex) or square grid on top of the map, with a scale slider for the cell size and X/Y offset sliders to line the overlay up with a grid baked into the map art. The grid draws above the fog so you can measure through it, and the settings are remembered per map.
+5. **Take it to the session**: fog is autosaved (and via Ctrl+S / the Save button). When you reopen a map it is exactly in the state you left it.
 
 ## Everything stays local
 
@@ -37,6 +38,7 @@ Built with Vite + React + TypeScript. No runtime dependencies beyond React; the 
 | --- | --- |
 | `R` / `F` | Reveal / Fog tool |
 | `[` / `]` | Smaller / larger brush |
+| `G` | Cycle grid overlay: none → hex → square |
 | `Space` + drag, right-drag, or middle-drag | Pan |
 | Scroll | Zoom at cursor |
 | `0` | Fit map to screen |

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getMap, saveFog } from './db';
+import { getMap, saveFog, saveGridSettings, type GridSettings, type GridType } from './db';
 import {
-  IconBack, IconClearFog, IconFit, IconFog, IconFogAll, IconReveal, IconSave, IconUndo,
+  IconBack, IconClearFog, IconFit, IconFog, IconFogAll, IconGridOff, IconHexGrid,
+  IconReveal, IconSave, IconSquareGrid, IconUndo,
 } from './icons';
 
 interface MapEditorProps {
@@ -22,6 +23,79 @@ const MIN_SCALE = 0.05;
 const MAX_SCALE = 12;
 const UNDO_LIMIT = 12;
 const AUTOSAVE_DELAY = 1200;
+const GRID_MIN_SIZE = 20;
+const GRID_MAX_SIZE = 400;
+/** Below this on-screen cell size the grid is unreadable; skip drawing it. */
+const GRID_MIN_SCREEN_CELL = 5;
+
+/**
+ * Build the grid overlay as a single path in map coordinates, restricted to
+ * the visible region so huge maps stay fast. Returns null when the grid is
+ * off or would be too dense to read at the current zoom.
+ */
+function buildGridPath(
+  type: GridType,
+  size: number,
+  offsetX: number,
+  offsetY: number,
+  mapWidth: number,
+  mapHeight: number,
+  viewLeft: number,
+  viewTop: number,
+  viewRight: number,
+  viewBottom: number,
+  scale: number
+): Path2D | null {
+  if (type === 'none' || size * scale < GRID_MIN_SCREEN_CELL) return null;
+
+  const left = Math.max(0, viewLeft);
+  const top = Math.max(0, viewTop);
+  const right = Math.min(mapWidth, viewRight);
+  const bottom = Math.min(mapHeight, viewBottom);
+  if (right <= left || bottom <= top) return null;
+
+  const path = new Path2D();
+
+  if (type === 'square') {
+    for (let gx = Math.floor((left - offsetX) / size) * size + offsetX; gx <= right; gx += size) {
+      if (gx < left) continue;
+      path.moveTo(gx, top);
+      path.lineTo(gx, bottom);
+    }
+    for (let gy = Math.floor((top - offsetY) / size) * size + offsetY; gy <= bottom; gy += size) {
+      if (gy < top) continue;
+      path.moveTo(left, gy);
+      path.lineTo(right, gy);
+    }
+    return path;
+  }
+
+  // Pointy-top hexagons; `size` is the hex width (distance across flats),
+  // so the circumradius is size / sqrt(3).
+  const r = size / Math.sqrt(3);
+  const rowStep = 1.5 * r;
+  const firstRow = Math.floor((top - offsetY) / rowStep) - 1;
+  const lastRow = Math.ceil((bottom - offsetY) / rowStep) + 1;
+  const firstCol = Math.floor((left - offsetX) / size) - 1;
+  const lastCol = Math.ceil((right - offsetX) / size) + 1;
+
+  for (let row = firstRow; row <= lastRow; row++) {
+    const cy = row * rowStep + offsetY;
+    const rowShift = row % 2 !== 0 ? size / 2 : 0;
+    for (let col = firstCol; col <= lastCol; col++) {
+      const cx = col * size + rowShift + offsetX;
+      for (let k = 0; k < 6; k++) {
+        const angle = Math.PI / 6 + (k * Math.PI) / 3;
+        const px = cx + r * Math.cos(angle);
+        const py = cy + r * Math.sin(angle);
+        if (k === 0) path.moveTo(px, py);
+        else path.lineTo(px, py);
+      }
+      path.closePath();
+    }
+  }
+  return path;
+}
 
 export function MapEditor({ mapId, onBack }: MapEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -49,6 +123,10 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
   const [saveState, setSaveState] = useState<SaveState>('saved');
   const [undoCount, setUndoCount] = useState(0);
   const [zoomPct, setZoomPct] = useState(100);
+  const [gridType, setGridType] = useState<GridType>('none');
+  const [gridSize, setGridSize] = useState(100);
+  const [gridOffsetX, setGridOffsetX] = useState(0);
+  const [gridOffsetY, setGridOffsetY] = useState(0);
 
   const brushSizeRef = useRef(brushSize);
   brushSizeRef.current = brushSize;
@@ -56,6 +134,14 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
   toolRef.current = tool;
   const fogOpacityRef = useRef(fogOpacity);
   fogOpacityRef.current = fogOpacity;
+  const gridTypeRef = useRef(gridType);
+  gridTypeRef.current = gridType;
+  const gridSizeRef = useRef(gridSize);
+  gridSizeRef.current = gridSize;
+  const gridOffsetXRef = useRef(gridOffsetX);
+  gridOffsetXRef.current = gridOffsetX;
+  const gridOffsetYRef = useRef(gridOffsetY);
+  gridOffsetYRef.current = gridOffsetY;
 
   /* ---------------------------------------------------------- rendering */
 
@@ -77,6 +163,35 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     ctx.globalAlpha = fogOpacityRef.current;
     ctx.drawImage(fogCanvas, 0, 0);
     ctx.globalAlpha = 1;
+
+    // Grid overlay (drawn above the fog so the DM can measure through it)
+    const gridPath = buildGridPath(
+      gridTypeRef.current,
+      gridSizeRef.current,
+      gridOffsetXRef.current,
+      gridOffsetYRef.current,
+      image.width,
+      image.height,
+      // Visible map-space region, for culling
+      -x / scale,
+      -y / scale,
+      (canvas.width / dpr - x) / scale,
+      (canvas.height / dpr - y) / scale,
+      scale
+    );
+    if (gridPath) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, image.width, image.height);
+      ctx.clip();
+      ctx.lineWidth = 2.4 / scale;
+      ctx.strokeStyle = 'rgba(8, 10, 16, 0.5)';
+      ctx.stroke(gridPath);
+      ctx.lineWidth = 1.1 / scale;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+      ctx.stroke(gridPath);
+      ctx.restore();
+    }
 
     // Brush cursor preview (screen space)
     const cursor = cursorRef.current;
@@ -242,6 +357,10 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       imageRef.current = image;
       fogCanvasRef.current = fogCanvas;
       setMapName(record.name);
+      setGridType(record.gridType ?? 'none');
+      setGridSize(record.gridSize ?? 100);
+      setGridOffsetX(record.gridOffsetX ?? 0);
+      setGridOffsetY(record.gridOffsetY ?? 0);
       setLoading(false);
     })().catch((err) => {
       console.error(err);
@@ -278,6 +397,23 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     return () => observer.disconnect();
   }, [loading, fitToScreen, scheduleDraw]);
 
+  // Redraw and persist grid settings when they change (skip the initial
+  // values that were just loaded from the record)
+  const gridSettledRef = useRef(false);
+  useEffect(() => {
+    if (loading) return;
+    if (!gridSettledRef.current) {
+      gridSettledRef.current = true;
+      return;
+    }
+    scheduleDraw();
+    const settings: GridSettings = { gridType, gridSize, gridOffsetX, gridOffsetY };
+    const timer = window.setTimeout(() => {
+      saveGridSettings(mapId, settings).catch(console.error);
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [gridType, gridSize, gridOffsetX, gridOffsetY, loading, mapId, scheduleDraw]);
+
   // Flush unsaved fog when leaving the page
   useEffect(() => {
     const beforeUnload = (e: BeforeUnloadEvent) => {
@@ -306,6 +442,8 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
         setBrushSize((s) => Math.max(8, s - 12));
       } else if (e.key === ']') {
         setBrushSize((s) => Math.min(400, s + 12));
+      } else if (e.key === 'g' || e.key === 'G') {
+        setGridType((t) => (t === 'none' ? 'hex' : t === 'hex' ? 'square' : 'none'));
       } else if (e.key === '0') {
         fitToScreen();
       } else if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
@@ -486,6 +624,68 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
           </button>
         </div>
 
+        <div className="toolbar-group" role="group" aria-label="Grid overlay">
+          <button
+            className={`btn ${gridType === 'none' ? 'tool-active-grid' : 'btn-ghost'}`}
+            onClick={() => setGridType('none')}
+            title="No grid (G cycles)"
+          >
+            <IconGridOff />
+          </button>
+          <button
+            className={`btn ${gridType === 'hex' ? 'tool-active-grid' : 'btn-ghost'}`}
+            onClick={() => setGridType('hex')}
+            title="Hex grid — honeycomb overlay (G cycles)"
+          >
+            <IconHexGrid />
+          </button>
+          <button
+            className={`btn ${gridType === 'square' ? 'tool-active-grid' : 'btn-ghost'}`}
+            onClick={() => setGridType('square')}
+            title="Square grid overlay (G cycles)"
+          >
+            <IconSquareGrid />
+          </button>
+          <div className="slider-group" title="Cell size in map pixels">
+            <span className="slider-label">Scale</span>
+            <input
+              type="range"
+              min={GRID_MIN_SIZE}
+              max={GRID_MAX_SIZE}
+              value={gridSize}
+              disabled={gridType === 'none'}
+              onChange={(e) => setGridSize(Number(e.target.value))}
+            />
+            <span className="slider-value">{gridSize}</span>
+          </div>
+          {gridType !== 'none' && (
+            <>
+              <div className="slider-group" title="Shift the grid horizontally to line it up with the map's own grid">
+                <span className="slider-label">X</span>
+                <input
+                  type="range"
+                  className="slider-narrow"
+                  min={0}
+                  max={gridSize * 2}
+                  value={gridOffsetX}
+                  onChange={(e) => setGridOffsetX(Number(e.target.value))}
+                />
+              </div>
+              <div className="slider-group" title="Shift the grid vertically to line it up with the map's own grid">
+                <span className="slider-label">Y</span>
+                <input
+                  type="range"
+                  className="slider-narrow"
+                  min={0}
+                  max={gridSize * 2}
+                  value={gridOffsetY}
+                  onChange={(e) => setGridOffsetY(Number(e.target.value))}
+                />
+              </div>
+            </>
+          )}
+        </div>
+
         <div className="toolbar-group slider-group" title="How opaque the fog looks while you prepare">
           <span className="slider-label">Fog opacity</span>
           <input
@@ -543,7 +743,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       </div>
 
       <footer className="editor-statusbar">
-        <span><kbd>R</kbd> reveal · <kbd>F</kbd> fog · <kbd>[</kbd><kbd>]</kbd> brush size · <kbd>Space</kbd>+drag or right-drag to pan · scroll to zoom · <kbd>0</kbd> fit · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Ctrl</kbd>+<kbd>S</kbd> save</span>
+        <span><kbd>R</kbd> reveal · <kbd>F</kbd> fog · <kbd>[</kbd><kbd>]</kbd> brush size · <kbd>G</kbd> grid · <kbd>Space</kbd>+drag or right-drag to pan · scroll to zoom · <kbd>0</kbd> fit · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Ctrl</kbd>+<kbd>S</kbd> save</span>
       </footer>
     </div>
   );

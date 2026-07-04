@@ -123,6 +123,34 @@ export function IconEdit({ size = 18 }: IconProps) {
   );
 }
 
+export function IconHexGrid({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M12 2.5 7.5 5.25v5.5L12 13.5l4.5-2.75v-5.5L12 2.5Z" />
+      <path d="m7.5 10.75-4.5 2.75v5.5l4.5 2.75 4.5-2.75v-5.5" />
+      <path d="m16.5 10.75 4.5 2.75v5.5L16.5 21.75 12 19v-5.5" />
+    </svg>
+  );
+}
+
+export function IconSquareGrid({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <rect x="3" y="3" width="18" height="18" rx="1" />
+      <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
+    </svg>
+  );
+}
+
+export function IconGridOff({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <rect x="3" y="3" width="18" height="18" rx="1" opacity="0.45" />
+      <path d="m5 19 14-14" />
+    </svg>
+  );
+}
+
 export function IconMap({ size = 18 }: IconProps) {
   return (
     <svg {...base(size)}>

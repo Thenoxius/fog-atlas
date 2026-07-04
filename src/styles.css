@@ -403,6 +403,20 @@ h1, h2, h3 {
   box-shadow: 0 0 12px color-mix(in srgb, var(--fog) 25%, transparent);
 }
 
+.tool-active-grid {
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+}
+
+.slider-group input[type='range']:disabled {
+  opacity: 0.4;
+}
+
+.slider-group input.slider-narrow {
+  width: 64px;
+}
+
 .slider-group {
   gap: 8px;
 }
