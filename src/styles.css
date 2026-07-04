@@ -349,6 +349,10 @@ h1, h2, h3 {
   overflow: hidden;
 }
 
+.editor:fullscreen {
+  background: var(--bg);
+}
+
 .editor-toolbar {
   display: flex;
   align-items: center;

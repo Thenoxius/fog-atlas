@@ -151,6 +151,28 @@ export function IconGridOff({ size = 18 }: IconProps) {
   );
 }
 
+export function IconFullscreen({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M15 3h6v6" />
+      <path d="m21 3-7 7" />
+      <path d="M9 21H3v-6" />
+      <path d="m3 21 7-7" />
+    </svg>
+  );
+}
+
+export function IconExitFullscreen({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M20 10h-6V4" />
+      <path d="m14 10 7-7" />
+      <path d="M4 14h6v6" />
+      <path d="m10 14-7 7" />
+    </svg>
+  );
+}
+
 export function IconMap({ size = 18 }: IconProps) {
   return (
     <svg {...base(size)}>

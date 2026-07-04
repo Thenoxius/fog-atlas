@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getMap, saveFog, saveGridSettings, type GridSettings, type GridType } from './db';
 import {
-  IconBack, IconClearFog, IconFit, IconFog, IconFogAll, IconGridOff, IconHexGrid,
-  IconReveal, IconSave, IconSquareGrid, IconUndo,
+  IconBack, IconClearFog, IconExitFullscreen, IconFit, IconFog, IconFogAll, IconFullscreen,
+  IconGridOff, IconHexGrid, IconReveal, IconSave, IconSquareGrid, IconUndo,
 } from './icons';
 
 interface MapEditorProps {
@@ -98,6 +98,7 @@ function buildGridPath(
 }
 
 export function MapEditor({ mapId, onBack }: MapEditorProps) {
+  const editorRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<ImageBitmap | null>(null);
@@ -127,6 +128,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
   const [gridSize, setGridSize] = useState(100);
   const [gridOffsetX, setGridOffsetX] = useState(0);
   const [gridOffsetY, setGridOffsetY] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const brushSizeRef = useRef(brushSize);
   brushSizeRef.current = brushSize;
@@ -414,6 +416,21 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     return () => window.clearTimeout(timer);
   }, [gridType, gridSize, gridOffsetX, gridOffsetY, loading, mapId, scheduleDraw]);
 
+  // Track fullscreen state (covers Esc and browser-initiated exits too)
+  useEffect(() => {
+    const onFullscreenChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(console.error);
+    } else {
+      editorRef.current?.requestFullscreen().catch(console.error);
+    }
+  }, []);
+
   // Flush unsaved fog when leaving the page
   useEffect(() => {
     const beforeUnload = (e: BeforeUnloadEvent) => {
@@ -570,7 +587,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
   }
 
   return (
-    <div className="editor">
+    <div className="editor" ref={editorRef}>
       <header className="editor-toolbar">
         <div className="toolbar-group">
           <button className="btn btn-ghost" onClick={handleBack} title="Back to library (saves fog)">
@@ -706,6 +723,13 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
           <button className="btn btn-ghost" onClick={() => zoomCenter(1.25)} title="Zoom in">+</button>
           <button className="btn btn-ghost" onClick={fitToScreen} title="Fit map to screen (0)">
             <IconFit />
+          </button>
+          <button
+            className="btn btn-ghost"
+            onClick={toggleFullscreen}
+            title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen — perfect for at the table'}
+          >
+            {isFullscreen ? <IconExitFullscreen /> : <IconFullscreen />}
           </button>
         </div>
 
