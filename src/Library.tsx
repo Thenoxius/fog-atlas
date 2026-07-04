@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { addMap, deleteMap, listMaps, renameMap, type MapRecord } from './db';
 import { collectionUrl, loadCollection, type CollectionMap } from './collection';
-import { IconClose, IconCollection, IconEdit, IconMap, IconTrash, IconUpload } from './icons';
+import { IconClose, IconCoffee, IconCollection, IconEdit, IconMap, IconTrash, IconUpload } from './icons';
+
+const KOFI_URL = 'https://ko-fi.com/thenoxius';
+const WELCOME_SEEN_KEY = 'fog-atlas-welcome-seen';
 
 interface LibraryProps {
   onOpenMap: (id: string) => void;
@@ -61,6 +64,13 @@ export function Library({ onOpenMap }: LibraryProps) {
   const [collectionFolder, setCollectionFolder] = useState('all');
   const [addingId, setAddingId] = useState<string | null>(null);
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
+  // First-launch intro; shown once, then never again
+  const [welcomeOpen, setWelcomeOpen] = useState(() => !localStorage.getItem(WELCOME_SEEN_KEY));
+
+  const dismissWelcome = () => {
+    localStorage.setItem(WELCOME_SEEN_KEY, '1');
+    setWelcomeOpen(false);
+  };
   const fileInputRef = useRef<HTMLInputElement>(null);
   const thumbUrls = useRef<Map<string, string>>(new Map());
 
@@ -293,8 +303,39 @@ export function Library({ onOpenMap }: LibraryProps) {
       </main>
 
       <footer className="library-footer">
-        Maps, fog, and thumbnails are stored in your browser's IndexedDB on this machine.
+        <span>Maps, fog, and thumbnails are stored in your browser's IndexedDB on this machine.</span>
+        <a className="kofi-link" href={KOFI_URL} target="_blank" rel="noreferrer" title="Buy me a coffee on Ko-fi">
+          <IconCoffee size={13} />
+          Support Fog Atlas
+        </a>
       </footer>
+
+      {welcomeOpen && (
+        <div className="collection-overlay" onClick={dismissWelcome}>
+          <div className="welcome-panel" onClick={(e) => e.stopPropagation()}>
+            <span className="brand-icon welcome-icon"><IconMap size={26} /></span>
+            <h2>Welcome to Fog Atlas</h2>
+            <p>
+              A fog-of-war tool for dungeon masters. Import your own battle maps or pick one
+              from the built-in collection, paint fog over what the party hasn't explored,
+              and reveal it live at the table. Add a hex or square grid overlay, sized and
+              aligned to your map.
+            </p>
+            <p>
+              Everything is saved automatically and stays on this device — no accounts,
+              no cloud. When you reopen a map, it is exactly as you left it.
+            </p>
+            <button className="btn btn-primary welcome-cta" onClick={dismissWelcome}>
+              Start preparing
+            </button>
+            <p className="welcome-support">
+              Fog Atlas is free. If it earns a place at your table,{' '}
+              <a href={KOFI_URL} target="_blank" rel="noreferrer">a coffee on Ko-fi</a> is
+              always appreciated. ☕
+            </p>
+          </div>
+        </div>
+      )}
 
       {collectionOpen && (
         <div className="collection-overlay" onClick={() => setCollectionOpen(false)}>

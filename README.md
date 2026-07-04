@@ -22,6 +22,10 @@ A fully local fog-of-war map tool for dungeon masters. Import your campaign maps
 - No network calls, no CDN fonts or icons, no telemetry. The app works offline once it is running.
 - Storage is per browser profile: open Fog Atlas in the same browser to see your maps.
 
+## Support
+
+Fog Atlas is free and open. If it earns a place at your table, you can [buy me a coffee on Ko-fi](https://ko-fi.com/thenoxius). ☕
+
 ## Development
 
 ```bash

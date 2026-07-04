@@ -334,10 +334,75 @@ h1, h2, h3 {
 }
 
 .library-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
   padding: 14px 28px;
   border-top: 1px solid var(--border);
   color: var(--text-faint);
   font-size: 12px;
+}
+
+.kofi-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-faint);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.kofi-link:hover {
+  color: var(--text-muted);
+  text-decoration: underline;
+}
+
+/* First-launch welcome */
+
+.welcome-panel {
+  width: min(460px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  padding: 34px 36px 26px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.8);
+}
+
+.welcome-icon {
+  width: 52px;
+  height: 52px;
+}
+
+.welcome-panel h2 {
+  font-size: 20px;
+}
+
+.welcome-panel p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.welcome-cta {
+  margin-top: 6px;
+  padding: 10px 22px;
+}
+
+.welcome-support {
+  font-size: 12px !important;
+  color: var(--text-faint) !important;
+}
+
+.welcome-support a {
+  color: var(--text-muted);
 }
 
 /* -------------------------------------------------------- collection */
