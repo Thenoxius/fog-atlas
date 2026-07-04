@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# DM's original map assets (2.4+ GB): stay local; the repo ships the
+# optimized copies in public/collection built by scripts/build-collection.mjs
+/assets/

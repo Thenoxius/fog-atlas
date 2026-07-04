@@ -24,6 +24,10 @@ export interface MapRecord {
   /** Grid translation in map pixels, to align the overlay with a grid baked into the map art. */
   gridOffsetX?: number;
   gridOffsetY?: number;
+  /** Grid line thickness in screen pixels. */
+  gridLineWidth?: number;
+  /** Grid visibility, 0..1. */
+  gridOpacity?: number;
 }
 
 const DB_NAME = 'fog-atlas';
@@ -92,6 +96,8 @@ export interface GridSettings {
   gridSize: number;
   gridOffsetX: number;
   gridOffsetY: number;
+  gridLineWidth: number;
+  gridOpacity: number;
 }
 
 export async function saveGridSettings(id: string, settings: GridSettings): Promise<void> {

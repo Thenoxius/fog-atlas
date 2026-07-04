@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { addMap, deleteMap, listMaps, renameMap, type MapRecord } from './db';
-import { IconEdit, IconMap, IconTrash, IconUpload } from './icons';
+import { collectionUrl, loadCollection, type CollectionMap } from './collection';
+import { IconClose, IconCollection, IconEdit, IconMap, IconTrash, IconUpload } from './icons';
 
 interface LibraryProps {
   onOpenMap: (id: string) => void;
@@ -8,8 +9,8 @@ interface LibraryProps {
 
 const THUMB_WIDTH = 480;
 
-async function buildRecord(file: File): Promise<MapRecord> {
-  const bitmap = await createImageBitmap(file);
+async function buildRecord(image: Blob, name: string): Promise<MapRecord> {
+  const bitmap = await createImageBitmap(image);
   const scale = Math.min(1, THUMB_WIDTH / bitmap.width);
   const thumbCanvas = document.createElement('canvas');
   thumbCanvas.width = Math.max(1, Math.round(bitmap.width * scale));
@@ -23,12 +24,12 @@ async function buildRecord(file: File): Promise<MapRecord> {
   const now = Date.now();
   const record: MapRecord = {
     id: crypto.randomUUID(),
-    name: file.name.replace(/\.[^.]+$/, ''),
+    name,
     width: bitmap.width,
     height: bitmap.height,
     createdAt: now,
     updatedAt: now,
-    image: file,
+    image,
     fog: null,
     thumbnail,
   };
@@ -53,6 +54,13 @@ export function Library({ onOpenMap }: LibraryProps) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [collectionOpen, setCollectionOpen] = useState(false);
+  const [collectionMaps, setCollectionMaps] = useState<CollectionMap[] | null>(null);
+  const [collectionError, setCollectionError] = useState('');
+  const [collectionSearch, setCollectionSearch] = useState('');
+  const [collectionFolder, setCollectionFolder] = useState('all');
+  const [addingId, setAddingId] = useState<string | null>(null);
+  const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const thumbUrls = useRef<Map<string, string>>(new Map());
 
@@ -89,7 +97,7 @@ export function Library({ onOpenMap }: LibraryProps) {
     }
     try {
       for (const file of images) {
-        await addMap(await buildRecord(file));
+        await addMap(await buildRecord(file, file.name.replace(/\.[^.]+$/, '')));
       }
       await refresh();
     } catch (err) {
@@ -97,6 +105,51 @@ export function Library({ onOpenMap }: LibraryProps) {
       setUploadError('Something went wrong while importing the map.');
     }
   };
+
+  const openCollection = () => {
+    setCollectionOpen(true);
+    setCollectionError('');
+    if (!collectionMaps) {
+      loadCollection()
+        .then(setCollectionMaps)
+        .catch((err) => {
+          console.error(err);
+          setCollectionError('The map collection could not be loaded.');
+        });
+    }
+  };
+
+  const handleAddFromCollection = async (entry: CollectionMap) => {
+    setAddingId(entry.id);
+    try {
+      const res = await fetch(collectionUrl(entry.file));
+      if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
+      const blob = await res.blob();
+      const record = await buildRecord(blob, entry.name);
+      if (entry.pps) {
+        // Filenames encode pixels-per-square; prefill so the grid overlay
+        // lines up the moment it is switched on
+        record.gridSize = entry.pps;
+      }
+      await addMap(record);
+      setAddedIds((prev) => new Set(prev).add(entry.id));
+      await refresh();
+    } catch (err) {
+      console.error(err);
+      setCollectionError(`Could not add "${entry.name}".`);
+    } finally {
+      setAddingId(null);
+    }
+  };
+
+  const collectionFolders = collectionMaps
+    ? [...new Set(collectionMaps.map((m) => m.folder))].sort()
+    : [];
+  const visibleCollection = (collectionMaps ?? []).filter((m) => {
+    const matchesFolder = collectionFolder === 'all' || m.folder === collectionFolder;
+    const matchesSearch = m.name.toLowerCase().includes(collectionSearch.toLowerCase());
+    return matchesFolder && matchesSearch;
+  });
 
   const startRename = (record: MapRecord) => {
     setRenamingId(record.id);
@@ -132,6 +185,10 @@ export function Library({ onOpenMap }: LibraryProps) {
           <span className="local-badge" title="Maps and fog are stored in this browser via IndexedDB. Nothing is uploaded anywhere.">
             ● 100% local — nothing leaves this device
           </span>
+          <button className="btn btn-secondary" onClick={openCollection} title="Browse the maps that ship with Fog Atlas">
+            <IconCollection />
+            Map collection
+          </button>
           <button className="btn btn-primary" onClick={() => fileInputRef.current?.click()}>
             <IconUpload />
             Import map
@@ -238,6 +295,83 @@ export function Library({ onOpenMap }: LibraryProps) {
       <footer className="library-footer">
         Maps, fog, and thumbnails are stored in your browser's IndexedDB on this machine.
       </footer>
+
+      {collectionOpen && (
+        <div className="collection-overlay" onClick={() => setCollectionOpen(false)}>
+          <div className="collection-panel" onClick={(e) => e.stopPropagation()}>
+            <header className="collection-header">
+              <div>
+                <h2><IconCollection size={20} /> Map Collection</h2>
+                <p className="collection-sub">
+                  {collectionMaps
+                    ? `${collectionMaps.length} battle maps included with Fog Atlas — add one to your library to prepare its fog`
+                    : 'Loading…'}
+                </p>
+              </div>
+              <button className="btn btn-ghost" onClick={() => setCollectionOpen(false)} title="Close">
+                <IconClose />
+              </button>
+            </header>
+
+            <div className="collection-controls">
+              <input
+                className="collection-search"
+                placeholder="Search maps…"
+                value={collectionSearch}
+                onChange={(e) => setCollectionSearch(e.target.value)}
+              />
+              <select
+                className="collection-folder"
+                value={collectionFolder}
+                onChange={(e) => setCollectionFolder(e.target.value)}
+              >
+                <option value="all">All series ({collectionMaps?.length ?? 0})</option>
+                {collectionFolders.map((folder) => (
+                  <option key={folder} value={folder}>
+                    {folder} ({collectionMaps?.filter((m) => m.folder === folder).length})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {collectionError && <div className="upload-error">{collectionError}</div>}
+
+            <div className="collection-grid-wrap">
+              {collectionMaps && visibleCollection.length === 0 ? (
+                <div className="empty-state">No maps match your search.</div>
+              ) : (
+                <div className="collection-grid">
+                  {visibleCollection.map((entry) => (
+                    <article key={entry.id} className="collection-card">
+                      <div className="collection-thumb">
+                        <img src={collectionUrl(entry.thumb)} alt={entry.name} loading="lazy" />
+                      </div>
+                      <div className="collection-card-body">
+                        <h3 title={entry.name}>{entry.name}</h3>
+                        <p className="map-meta">
+                          {entry.folder}
+                          {entry.gridW && entry.gridH ? ` · ${entry.gridW}×${entry.gridH} squares` : ''}
+                        </p>
+                        {addedIds.has(entry.id) ? (
+                          <span className="collection-added">✓ In library</span>
+                        ) : (
+                          <button
+                            className="btn btn-primary btn-sm"
+                            disabled={addingId !== null}
+                            onClick={() => handleAddFromCollection(entry)}
+                          >
+                            {addingId === entry.id ? 'Adding…' : 'Add to library'}
+                          </button>
+                        )}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -128,6 +128,8 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
   const [gridSize, setGridSize] = useState(100);
   const [gridOffsetX, setGridOffsetX] = useState(0);
   const [gridOffsetY, setGridOffsetY] = useState(0);
+  const [gridLineWidth, setGridLineWidth] = useState(1.2);
+  const [gridOpacity, setGridOpacity] = useState(0.7);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const brushSizeRef = useRef(brushSize);
@@ -144,6 +146,10 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
   gridOffsetXRef.current = gridOffsetX;
   const gridOffsetYRef = useRef(gridOffsetY);
   gridOffsetYRef.current = gridOffsetY;
+  const gridLineWidthRef = useRef(gridLineWidth);
+  gridLineWidthRef.current = gridLineWidth;
+  const gridOpacityRef = useRef(gridOpacity);
+  gridOpacityRef.current = gridOpacity;
 
   /* ---------------------------------------------------------- rendering */
 
@@ -182,15 +188,19 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       scale
     );
     if (gridPath) {
+      // Line thickness is in screen pixels (constant while zooming);
+      // visibility scales both strokes of the dark-under-light pair
+      const lineWidth = gridLineWidthRef.current;
+      const visibility = gridOpacityRef.current;
       ctx.save();
       ctx.beginPath();
       ctx.rect(0, 0, image.width, image.height);
       ctx.clip();
-      ctx.lineWidth = 2.4 / scale;
-      ctx.strokeStyle = 'rgba(8, 10, 16, 0.5)';
+      ctx.lineWidth = (lineWidth * 2.1) / scale;
+      ctx.strokeStyle = `rgba(8, 10, 16, ${0.72 * visibility})`;
       ctx.stroke(gridPath);
-      ctx.lineWidth = 1.1 / scale;
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+      ctx.lineWidth = lineWidth / scale;
+      ctx.strokeStyle = `rgba(255, 255, 255, ${0.8 * visibility})`;
       ctx.stroke(gridPath);
       ctx.restore();
     }
@@ -363,6 +373,8 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       setGridSize(record.gridSize ?? 100);
       setGridOffsetX(record.gridOffsetX ?? 0);
       setGridOffsetY(record.gridOffsetY ?? 0);
+      setGridLineWidth(record.gridLineWidth ?? 1.2);
+      setGridOpacity(record.gridOpacity ?? 0.7);
       setLoading(false);
     })().catch((err) => {
       console.error(err);
@@ -409,12 +421,12 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       return;
     }
     scheduleDraw();
-    const settings: GridSettings = { gridType, gridSize, gridOffsetX, gridOffsetY };
+    const settings: GridSettings = { gridType, gridSize, gridOffsetX, gridOffsetY, gridLineWidth, gridOpacity };
     const timer = window.setTimeout(() => {
       saveGridSettings(mapId, settings).catch(console.error);
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [gridType, gridSize, gridOffsetX, gridOffsetY, loading, mapId, scheduleDraw]);
+  }, [gridType, gridSize, gridOffsetX, gridOffsetY, gridLineWidth, gridOpacity, loading, mapId, scheduleDraw]);
 
   // Track fullscreen state (covers Esc and browser-initiated exits too)
   useEffect(() => {
@@ -697,6 +709,28 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
                   max={gridSize * 2}
                   value={gridOffsetY}
                   onChange={(e) => setGridOffsetY(Number(e.target.value))}
+                />
+              </div>
+              <div className="slider-group" title="Grid line thickness">
+                <span className="slider-label">Line</span>
+                <input
+                  type="range"
+                  className="slider-narrow"
+                  min={5}
+                  max={50}
+                  value={Math.round(gridLineWidth * 10)}
+                  onChange={(e) => setGridLineWidth(Number(e.target.value) / 10)}
+                />
+              </div>
+              <div className="slider-group" title="Grid visibility">
+                <span className="slider-label">Visibility</span>
+                <input
+                  type="range"
+                  className="slider-narrow"
+                  min={10}
+                  max={100}
+                  value={Math.round(gridOpacity * 100)}
+                  onChange={(e) => setGridOpacity(Number(e.target.value) / 100)}
                 />
               </div>
             </>

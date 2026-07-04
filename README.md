@@ -4,7 +4,7 @@ A fully local fog-of-war map tool for dungeon masters. Import your campaign maps
 
 ## How it works
 
-1. **Import** battle maps or region maps (any image format) into the library — via the button or by dropping files on the page.
+1. **Import** battle maps or region maps (any image format) into the library — via the button or by dropping files on the page. Or open the **Map Collection**: hundreds of battle maps that ship with the app, searchable and grouped by campaign/series, added to your library with one click (grid size is prefilled from the map's pixels-per-square when known).
 2. **Open** a map. Maps start without fog.
 3. **Prepare the fog**:
    - **Reveal** (R): use the mouse as an eraser to remove fog
@@ -13,7 +13,7 @@ A fully local fog-of-war map tool for dungeon masters. Import your campaign maps
    - Adjustable brush size and fog opacity (see through the fog while you prep)
    - Undo (Ctrl+Z), pan (Space/right-drag), zoom (scroll), fit (0)
    - Fullscreen button for distraction-free prep and play at the table
-4. **Grid overlay** (G): project a honeycomb (hex) or square grid on top of the map, with a scale slider for the cell size and X/Y offset sliders to line the overlay up with a grid baked into the map art. The grid draws above the fog so you can measure through it, and the settings are remembered per map.
+4. **Grid overlay** (G): project a honeycomb (hex) or square grid on top of the map, with sliders for cell size (scale), X/Y offset (to line the overlay up with a grid baked into the map art), line thickness, and visibility. The grid draws above the fog so you can measure through it, and all settings are remembered per map.
 5. **Take it to the session**: fog is autosaved (and via Ctrl+S / the Save button). When you reopen a map it is exactly in the state you left it.
 
 ## Everything stays local
@@ -32,6 +32,16 @@ npm run preview  # serve the production build locally
 ```
 
 Built with Vite + React + TypeScript. No runtime dependencies beyond React; the canvas, fog compositing (`destination-out` erasing), and IndexedDB layer are hand-rolled.
+
+### The bundled map collection
+
+The DM's original map files live in `assets/` (gitignored — 2.4+ GB doesn't fit GitHub or Pages). The repo ships web-optimized copies instead, generated into `public/collection/` (max 3000px WebP + thumbnails + `manifest.json`) by:
+
+```bash
+node scripts/build-collection.mjs
+```
+
+Re-run it after adding maps to `assets/Battlemaps/<Series>/`; the script is incremental and parses grid dimensions and pixels-per-square from the filenames.
 
 ## Keyboard shortcuts
 

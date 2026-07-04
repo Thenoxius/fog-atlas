@@ -151,6 +151,26 @@ export function IconGridOff({ size = 18 }: IconProps) {
   );
 }
 
+export function IconCollection({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="m16 6 4 14" />
+      <path d="M12 6v14" />
+      <path d="M8 8v12" />
+      <path d="M4 4v16" />
+    </svg>
+  );
+}
+
+export function IconClose({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </svg>
+  );
+}
+
 export function IconFullscreen({ size = 18 }: IconProps) {
   return (
     <svg {...base(size)}>
