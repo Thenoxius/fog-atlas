@@ -63,7 +63,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
   // Display opacity of the fog for the DM only — lower makes it easy to see
   // what lies under the fog while deciding what to reveal. The player screen
   // always shows fully opaque black.
-  const [fogOpacity, setFogOpacity] = useState(0.55);
+  const [fogOpacity, setFogOpacity] = useState(0.4);
   const [saveState, setSaveState] = useState<SaveState>('saved');
   const [undoCount, setUndoCount] = useState(0);
   const [zoomPct, setZoomPct] = useState(100);

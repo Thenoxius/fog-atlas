@@ -2,12 +2,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getMap } from './db';
 import { buildGridPath, strokeGrid, type GridConfig } from './grid';
 import { openPresentChannel, type PresentMessage } from './present';
-import { IconExitFullscreen, IconFullscreen, IconMap } from './icons';
+import { IconExitFullscreen, IconFit, IconFullscreen, IconMap } from './icons';
 
 // The player screen: a dedicated window the DM drags onto the TV / board.
-// It shows the whole active map fit to the window, the grid, and fully
-// opaque black fog — no tools. Everything is driven by the DM window over
-// a BroadcastChannel; map images and saved fog are read from IndexedDB.
+// It shows the active map with fully opaque black fog and the grid — no
+// tools. Everything is driven by the DM window over a BroadcastChannel;
+// map images and saved fog are read from IndexedDB.
+//
+// The DM can slide the mouse onto this window (extended display) to pan and
+// zoom the board and point at things with the highlight ring.
 
 const NO_GRID: GridConfig = {
   gridType: 'none',
@@ -18,6 +21,16 @@ const NO_GRID: GridConfig = {
   gridOpacity: 0.7,
 };
 
+const MIN_SCALE = 0.05;
+const MAX_SCALE = 12;
+const HIGHLIGHT_RADIUS = 22;
+
+interface ViewTransform {
+  scale: number;
+  x: number;
+  y: number;
+}
+
 export function PlayerView() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<ImageBitmap | null>(null);
@@ -26,6 +39,14 @@ export function PlayerView() {
   const currentMapIdRef = useRef<string | null>(null);
   const genRef = useRef(0);
   const rafRef = useRef(0);
+
+  const viewRef = useRef<ViewTransform>({ scale: 1, x: 0, y: 0 });
+  const cursorRef = useRef<{ x: number; y: number } | null>(null);
+  const panningRef = useRef(false);
+  const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+  // Until the DM pans/zooms, keep the map fit to the window (so going
+  // fullscreen re-frames). Once they navigate, resizes preserve their view.
+  const userMovedRef = useRef(false);
 
   const [waiting, setWaiting] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -42,12 +63,7 @@ export function PlayerView() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (!image) return;
 
-    const winW = canvas.width / dpr;
-    const winH = canvas.height / dpr;
-    const scale = Math.min(winW / image.width, winH / image.height);
-    const x = (winW - image.width * scale) / 2;
-    const y = (winH - image.height * scale) / 2;
-
+    const { scale, x, y } = viewRef.current;
     ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * x, dpr * y);
     ctx.drawImage(image, 0, 0);
 
@@ -63,13 +79,35 @@ export function PlayerView() {
       grid.gridOffsetY,
       image.width,
       image.height,
-      0,
-      0,
-      image.width,
-      image.height,
+      -x / scale,
+      -y / scale,
+      (canvas.width / dpr - x) / scale,
+      (canvas.height / dpr - y) / scale,
       scale
     );
     if (path) strokeGrid(ctx, path, scale, grid.gridLineWidth, grid.gridOpacity, image.width, image.height);
+
+    // Highlight ring — the DM's pointer, for calling attention to the board
+    const cursor = cursorRef.current;
+    if (cursor) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.beginPath();
+      ctx.arc(cursor.x, cursor.y, HIGHLIGHT_RADIUS + 6, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 214, 112, 0.12)';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(cursor.x, cursor.y, HIGHLIGHT_RADIUS, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255, 214, 112, 0.95)';
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = 'rgba(255, 200, 80, 0.9)';
+      ctx.shadowBlur = 12;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.beginPath();
+      ctx.arc(cursor.x, cursor.y, 2, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 214, 112, 0.95)';
+      ctx.fill();
+    }
   }, []);
 
   const scheduleDraw = useCallback(() => {
@@ -79,6 +117,23 @@ export function PlayerView() {
       draw();
     });
   }, [draw]);
+
+  const fitToWindow = useCallback(() => {
+    const canvas = canvasRef.current;
+    const image = imageRef.current;
+    if (!canvas || !image) return;
+    const dpr = window.devicePixelRatio || 1;
+    const winW = canvas.width / dpr;
+    const winH = canvas.height / dpr;
+    const scale = Math.min(winW / image.width, winH / image.height);
+    viewRef.current = {
+      scale,
+      x: (winW - image.width * scale) / 2,
+      y: (winH - image.height * scale) / 2,
+    };
+    userMovedRef.current = false;
+    scheduleDraw();
+  }, [scheduleDraw]);
 
   // Load a map (image + saved fog) from IndexedDB when the DM switches.
   // The grid arrives inline from the DM so it is correct immediately.
@@ -108,9 +163,9 @@ export function PlayerView() {
         }
       }
       setWaiting(false);
-      scheduleDraw();
+      fitToWindow();
     },
-    [scheduleDraw]
+    [fitToWindow]
   );
 
   // BroadcastChannel wiring
@@ -157,12 +212,13 @@ export function PlayerView() {
       canvas.height = Math.round(window.innerHeight * dpr);
       canvas.style.width = `${window.innerWidth}px`;
       canvas.style.height = `${window.innerHeight}px`;
-      scheduleDraw();
+      if (userMovedRef.current) scheduleDraw();
+      else fitToWindow();
     };
     window.addEventListener('resize', resize);
     resize();
     return () => window.removeEventListener('resize', resize);
-  }, [scheduleDraw]);
+  }, [fitToWindow, scheduleDraw]);
 
   // Fullscreen + auto-hiding controls
   useEffect(() => {
@@ -194,9 +250,77 @@ export function PlayerView() {
     }
   };
 
+  /* -------------------------------------------------- pan / zoom / point */
+
+  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current!;
+    try {
+      canvas.setPointerCapture(e.pointerId);
+    } catch {
+      // best-effort
+    }
+    const rect = canvas.getBoundingClientRect();
+    panningRef.current = true;
+    lastPointRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current!;
+    const rect = canvas.getBoundingClientRect();
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+    cursorRef.current = { x: sx, y: sy };
+    if (panningRef.current && lastPointRef.current) {
+      viewRef.current.x += sx - lastPointRef.current.x;
+      viewRef.current.y += sy - lastPointRef.current.y;
+      lastPointRef.current = { x: sx, y: sy };
+      userMovedRef.current = true;
+    }
+    scheduleDraw();
+  };
+
+  const endPointer = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    try {
+      canvasRef.current?.releasePointerCapture(e.pointerId);
+    } catch {
+      // best-effort
+    }
+    panningRef.current = false;
+    lastPointRef.current = null;
+  };
+
+  const onWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current!;
+    const rect = canvas.getBoundingClientRect();
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+    const view = viewRef.current;
+    const factor = Math.exp(-e.deltaY * 0.0015);
+    const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, view.scale * factor));
+    const ratio = newScale / view.scale;
+    view.x = sx - (sx - view.x) * ratio;
+    view.y = sy - (sy - view.y) * ratio;
+    view.scale = newScale;
+    userMovedRef.current = true;
+    scheduleDraw();
+  };
+
   return (
     <div className="player-view">
-      <canvas ref={canvasRef} className="player-canvas" />
+      <canvas
+        ref={canvasRef}
+        className="player-canvas"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endPointer}
+        onPointerLeave={(e) => {
+          cursorRef.current = null;
+          endPointer(e);
+          scheduleDraw();
+        }}
+        onWheel={onWheel}
+        onContextMenu={(e) => e.preventDefault()}
+      />
       {waiting && (
         <div className="player-waiting">
           <span className="brand-icon welcome-icon"><IconMap size={26} /></span>
@@ -205,13 +329,14 @@ export function PlayerView() {
           <p className="player-hint">Drag this window onto your TV or board and go fullscreen.</p>
         </div>
       )}
-      <button
-        className={`player-fs-btn ${controlsVisible ? '' : 'hidden'}`}
-        onClick={toggleFullscreen}
-        title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-      >
-        {isFullscreen ? <IconExitFullscreen /> : <IconFullscreen />}
-      </button>
+      <div className={`player-controls ${controlsVisible ? '' : 'hidden'}`}>
+        <button className="player-fs-btn" onClick={fitToWindow} title="Fit map to screen">
+          <IconFit />
+        </button>
+        <button className="player-fs-btn" onClick={toggleFullscreen} title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
+          {isFullscreen ? <IconExitFullscreen /> : <IconFullscreen />}
+        </button>
+      </div>
     </div>
   );
 }

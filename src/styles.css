@@ -886,6 +886,8 @@ kbd {
 .player-canvas {
   position: absolute;
   inset: 0;
+  cursor: none;
+  touch-action: none;
 }
 
 .player-waiting {
@@ -911,10 +913,22 @@ kbd {
   color: var(--text-faint);
 }
 
-.player-fs-btn {
+.player-controls {
   position: absolute;
   top: 16px;
   right: 16px;
+  display: flex;
+  gap: 8px;
+  opacity: 1;
+  transition: opacity 0.4s;
+}
+
+.player-controls.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.player-fs-btn {
   width: 44px;
   height: 44px;
   display: grid;
@@ -924,11 +938,8 @@ kbd {
   background: rgba(15, 18, 28, 0.75);
   color: var(--text);
   cursor: pointer;
-  opacity: 1;
-  transition: opacity 0.4s;
 }
 
-.player-fs-btn.hidden {
-  opacity: 0;
-  pointer-events: none;
+.player-fs-btn:hover {
+  border-color: var(--accent);
 }
