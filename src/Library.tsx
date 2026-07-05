@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { addMap, deleteMap, listMaps, renameMap, type MapRecord } from './db';
-import { collectionUrl, loadCollection, type CollectionMap } from './collection';
-import { IconClose, IconCoffee, IconCollection, IconEdit, IconMap, IconTrash, IconUpload } from './icons';
+import { addMap, deleteMap, getSceneMaps, listMaps, renameMap, renameScene, type MapRecord } from './db';
+import { buildRecordFromFile } from './mapImport';
+import { MapPicker } from './MapPicker';
+import { IconCoffee, IconCollection, IconEdit, IconLayers, IconMap, IconTrash, IconUpload } from './icons';
 
 const KOFI_URL = 'https://ko-fi.com/thenoxius';
 const WELCOME_SEEN_KEY = 'fog-atlas-welcome-seen';
@@ -10,34 +11,32 @@ interface LibraryProps {
   onOpenMap: (id: string) => void;
 }
 
-const THUMB_WIDTH = 480;
+// A library entry is either a standalone map or a scene grouping several maps
+type LibEntry =
+  | { kind: 'map'; map: MapRecord }
+  | { kind: 'scene'; sceneId: string; sceneName: string; maps: MapRecord[] };
 
-async function buildRecord(image: Blob, name: string): Promise<MapRecord> {
-  const bitmap = await createImageBitmap(image);
-  const scale = Math.min(1, THUMB_WIDTH / bitmap.width);
-  const thumbCanvas = document.createElement('canvas');
-  thumbCanvas.width = Math.max(1, Math.round(bitmap.width * scale));
-  thumbCanvas.height = Math.max(1, Math.round(bitmap.height * scale));
-  const ctx = thumbCanvas.getContext('2d')!;
-  ctx.drawImage(bitmap, 0, 0, thumbCanvas.width, thumbCanvas.height);
-  const thumbnail = await new Promise<Blob>((resolve, reject) =>
-    thumbCanvas.toBlob((b) => (b ? resolve(b) : reject(new Error('thumbnail failed'))), 'image/jpeg', 0.82)
-  );
-
-  const now = Date.now();
-  const record: MapRecord = {
-    id: crypto.randomUUID(),
-    name,
-    width: bitmap.width,
-    height: bitmap.height,
-    createdAt: now,
-    updatedAt: now,
-    image,
-    fog: null,
-    thumbnail,
-  };
-  bitmap.close();
-  return record;
+function groupEntries(maps: MapRecord[]): LibEntry[] {
+  const entries: LibEntry[] = [];
+  const sceneIndex = new Map<string, number>();
+  for (const m of maps) {
+    if (m.sceneId) {
+      const idx = sceneIndex.get(m.sceneId);
+      if (idx === undefined) {
+        sceneIndex.set(m.sceneId, entries.length);
+        entries.push({ kind: 'scene', sceneId: m.sceneId, sceneName: m.sceneName ?? 'Scene', maps: [m] });
+      } else {
+        (entries[idx] as Extract<LibEntry, { kind: 'scene' }>).maps.push(m);
+      }
+    } else {
+      entries.push({ kind: 'map', map: m });
+    }
+  }
+  // Order scene members by creation so level 1 comes first
+  for (const e of entries) {
+    if (e.kind === 'scene') e.maps.sort((a, b) => a.createdAt - b.createdAt);
+  }
+  return entries;
 }
 
 function formatDate(ts: number): string {
@@ -54,25 +53,19 @@ export function Library({ onOpenMap }: LibraryProps) {
   const [loading, setLoading] = useState(true);
   const [dragOver, setDragOver] = useState(false);
   const [uploadError, setUploadError] = useState('');
-  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<{ kind: 'map' | 'scene'; id: string } | null>(null);
   const [renameValue, setRenameValue] = useState('');
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [collectionOpen, setCollectionOpen] = useState(false);
-  const [collectionMaps, setCollectionMaps] = useState<CollectionMap[] | null>(null);
-  const [collectionError, setCollectionError] = useState('');
-  const [collectionSearch, setCollectionSearch] = useState('');
-  const [collectionFolder, setCollectionFolder] = useState('all');
-  const [addingId, setAddingId] = useState<string | null>(null);
-  const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
-  // First-launch intro; shown once, then never again
+  const [confirmDelete, setConfirmDelete] = useState<{ kind: 'map' | 'scene'; id: string } | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [welcomeOpen, setWelcomeOpen] = useState(() => !localStorage.getItem(WELCOME_SEEN_KEY));
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const thumbUrls = useRef<Map<string, string>>(new Map());
 
   const dismissWelcome = () => {
     localStorage.setItem(WELCOME_SEEN_KEY, '1');
     setWelcomeOpen(false);
   };
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const thumbUrls = useRef<Map<string, string>>(new Map());
 
   const refresh = useCallback(async () => {
     const records = await listMaps();
@@ -107,7 +100,7 @@ export function Library({ onOpenMap }: LibraryProps) {
     }
     try {
       for (const file of images) {
-        await addMap(await buildRecord(file, file.name.replace(/\.[^.]+$/, '')));
+        await addMap(await buildRecordFromFile(file));
       }
       await refresh();
     } catch (err) {
@@ -116,70 +109,52 @@ export function Library({ onOpenMap }: LibraryProps) {
     }
   };
 
-  const openCollection = () => {
-    setCollectionOpen(true);
-    setCollectionError('');
-    if (!collectionMaps) {
-      loadCollection()
-        .then(setCollectionMaps)
-        .catch((err) => {
-          console.error(err);
-          setCollectionError('The map collection could not be loaded.');
-        });
-    }
-  };
-
-  const handleAddFromCollection = async (entry: CollectionMap) => {
-    setAddingId(entry.id);
-    try {
-      const res = await fetch(collectionUrl(entry.file));
-      if (!res.ok) throw new Error(`fetch failed: ${res.status}`);
-      const blob = await res.blob();
-      const record = await buildRecord(blob, entry.name);
-      if (entry.pps) {
-        // Filenames encode pixels-per-square; prefill so the grid overlay
-        // lines up the moment it is switched on
-        record.gridSize = entry.pps;
-      }
-      await addMap(record);
-      setAddedIds((prev) => new Set(prev).add(entry.id));
-      await refresh();
-    } catch (err) {
-      console.error(err);
-      setCollectionError(`Could not add "${entry.name}".`);
-    } finally {
-      setAddingId(null);
-    }
-  };
-
-  const collectionFolders = collectionMaps
-    ? [...new Set(collectionMaps.map((m) => m.folder))].sort()
-    : [];
-  const visibleCollection = (collectionMaps ?? []).filter((m) => {
-    const matchesFolder = collectionFolder === 'all' || m.folder === collectionFolder;
-    const matchesSearch = m.name.toLowerCase().includes(collectionSearch.toLowerCase());
-    return matchesFolder && matchesSearch;
-  });
-
-  const startRename = (record: MapRecord) => {
-    setRenamingId(record.id);
-    setRenameValue(record.name);
+  const startRename = (kind: 'map' | 'scene', id: string, current: string) => {
+    setRenaming({ kind, id });
+    setRenameValue(current);
   };
 
   const commitRename = async () => {
-    if (renamingId && renameValue.trim()) {
-      await renameMap(renamingId, renameValue.trim());
+    if (renaming && renameValue.trim()) {
+      if (renaming.kind === 'map') await renameMap(renaming.id, renameValue.trim());
+      else await renameScene(renaming.id, renameValue.trim());
       await refresh();
     }
-    setRenamingId(null);
+    setRenaming(null);
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDeleteMap = async (id: string) => {
     await deleteMap(id);
     thumbUrls.current.delete(id);
-    setConfirmDeleteId(null);
+    setConfirmDelete(null);
     await refresh();
   };
+
+  const handleDeleteScene = async (sceneId: string) => {
+    const members = await getSceneMaps(sceneId);
+    for (const m of members) {
+      await deleteMap(m.id);
+      thumbUrls.current.delete(m.id);
+    }
+    setConfirmDelete(null);
+    await refresh();
+  };
+
+  const entries = groupEntries(maps);
+
+  const renameInput = (
+    <input
+      className="rename-input"
+      value={renameValue}
+      autoFocus
+      onChange={(e) => setRenameValue(e.target.value)}
+      onBlur={commitRename}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commitRename();
+        if (e.key === 'Escape') setRenaming(null);
+      }}
+    />
+  );
 
   return (
     <div className="library">
@@ -195,7 +170,7 @@ export function Library({ onOpenMap }: LibraryProps) {
           <span className="local-badge" title="Maps and fog are stored in this browser via IndexedDB. Nothing is uploaded anywhere.">
             ● 100% local — nothing leaves this device
           </span>
-          <button className="btn btn-secondary" onClick={openCollection} title="Browse the maps that ship with Fog Atlas">
+          <button className="btn btn-secondary" onClick={() => setPickerOpen(true)} title="Browse the maps that ship with Fog Atlas">
             <IconCollection />
             Map collection
           </button>
@@ -235,7 +210,7 @@ export function Library({ onOpenMap }: LibraryProps) {
 
         {loading ? (
           <div className="empty-state">Loading maps…</div>
-        ) : maps.length === 0 ? (
+        ) : entries.length === 0 ? (
           <div className="empty-state">
             <IconMap size={44} />
             <h2>No maps yet</h2>
@@ -248,56 +223,93 @@ export function Library({ onOpenMap }: LibraryProps) {
           </div>
         ) : (
           <div className="map-grid">
-            {maps.map((record) => (
-              <article key={record.id} className="map-card">
-                <button className="map-thumb" onClick={() => onOpenMap(record.id)} title="Open map">
-                  <img src={thumbUrl(record)} alt={record.name} />
-                  <span className="map-thumb-overlay">Open</span>
-                  {record.fog && <span className="fog-badge">fog prepared</span>}
-                </button>
-                <div className="map-card-body">
-                  {renamingId === record.id ? (
-                    <input
-                      className="rename-input"
-                      value={renameValue}
-                      autoFocus
-                      onChange={(e) => setRenameValue(e.target.value)}
-                      onBlur={commitRename}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') commitRename();
-                        if (e.key === 'Escape') setRenamingId(null);
-                      }}
-                    />
-                  ) : (
-                    <h3 className="map-name" onDoubleClick={() => startRename(record)}>{record.name}</h3>
-                  )}
-                  <p className="map-meta">
-                    {record.width} × {record.height} px · edited {formatDate(record.updatedAt)}
-                  </p>
-                  <div className="map-card-actions">
-                    {confirmDeleteId === record.id ? (
-                      <>
-                        <span className="confirm-label">Delete map?</span>
-                        <button className="btn btn-danger btn-sm" onClick={() => handleDelete(record.id)}>Delete</button>
-                        <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDeleteId(null)}>Cancel</button>
-                      </>
+            {entries.map((entry) =>
+              entry.kind === 'scene' ? (
+                <article key={entry.sceneId} className="map-card scene-card">
+                  <button className="map-thumb" onClick={() => onOpenMap(entry.maps[0].id)} title="Open scene">
+                    <img src={thumbUrl(entry.maps[0])} alt={entry.sceneName} />
+                    <span className="map-thumb-overlay">Open</span>
+                    <span className="scene-badge"><IconLayers size={13} /> {entry.maps.length} maps</span>
+                    {entry.maps.some((m) => m.fog) && <span className="fog-badge">fog prepared</span>}
+                  </button>
+                  <div className="map-card-body">
+                    {renaming?.kind === 'scene' && renaming.id === entry.sceneId ? (
+                      renameInput
                     ) : (
-                      <>
-                        <button className="btn btn-ghost btn-sm" onClick={() => startRename(record)} title="Rename">
-                          <IconEdit size={15} />
-                        </button>
-                        <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDeleteId(record.id)} title="Delete">
-                          <IconTrash size={15} />
-                        </button>
-                        <button className="btn btn-secondary btn-sm open-btn" onClick={() => onOpenMap(record.id)}>
-                          Open
-                        </button>
-                      </>
+                      <h3 className="map-name" onDoubleClick={() => startRename('scene', entry.sceneId, entry.sceneName)}>
+                        {entry.sceneName}
+                      </h3>
                     )}
+                    <p className="map-meta">
+                      Scene · {entry.maps.length} maps · edited{' '}
+                      {formatDate(Math.max(...entry.maps.map((m) => m.updatedAt)))}
+                    </p>
+                    <div className="map-card-actions">
+                      {confirmDelete?.kind === 'scene' && confirmDelete.id === entry.sceneId ? (
+                        <>
+                          <span className="confirm-label">Delete all {entry.maps.length} maps?</span>
+                          <button className="btn btn-danger btn-sm" onClick={() => handleDeleteScene(entry.sceneId)}>Delete</button>
+                          <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDelete(null)}>Cancel</button>
+                        </>
+                      ) : (
+                        <>
+                          <button className="btn btn-ghost btn-sm" onClick={() => startRename('scene', entry.sceneId, entry.sceneName)} title="Rename scene">
+                            <IconEdit size={15} />
+                          </button>
+                          <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDelete({ kind: 'scene', id: entry.sceneId })} title="Delete scene">
+                            <IconTrash size={15} />
+                          </button>
+                          <button className="btn btn-secondary btn-sm open-btn" onClick={() => onOpenMap(entry.maps[0].id)}>
+                            Open
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </article>
-            ))}
+                </article>
+              ) : (
+                <article key={entry.map.id} className="map-card">
+                  <button className="map-thumb" onClick={() => onOpenMap(entry.map.id)} title="Open map">
+                    <img src={thumbUrl(entry.map)} alt={entry.map.name} />
+                    <span className="map-thumb-overlay">Open</span>
+                    {entry.map.fog && <span className="fog-badge">fog prepared</span>}
+                  </button>
+                  <div className="map-card-body">
+                    {renaming?.kind === 'map' && renaming.id === entry.map.id ? (
+                      renameInput
+                    ) : (
+                      <h3 className="map-name" onDoubleClick={() => startRename('map', entry.map.id, entry.map.name)}>
+                        {entry.map.name}
+                      </h3>
+                    )}
+                    <p className="map-meta">
+                      {entry.map.width} × {entry.map.height} px · edited {formatDate(entry.map.updatedAt)}
+                    </p>
+                    <div className="map-card-actions">
+                      {confirmDelete?.kind === 'map' && confirmDelete.id === entry.map.id ? (
+                        <>
+                          <span className="confirm-label">Delete map?</span>
+                          <button className="btn btn-danger btn-sm" onClick={() => handleDeleteMap(entry.map.id)}>Delete</button>
+                          <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDelete(null)}>Cancel</button>
+                        </>
+                      ) : (
+                        <>
+                          <button className="btn btn-ghost btn-sm" onClick={() => startRename('map', entry.map.id, entry.map.name)} title="Rename">
+                            <IconEdit size={15} />
+                          </button>
+                          <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDelete({ kind: 'map', id: entry.map.id })} title="Delete">
+                            <IconTrash size={15} />
+                          </button>
+                          <button className="btn btn-secondary btn-sm open-btn" onClick={() => onOpenMap(entry.map.id)}>
+                            Open
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              )
+            )}
           </div>
         )}
       </main>
@@ -322,8 +334,8 @@ export function Library({ onOpenMap }: LibraryProps) {
               aligned to your map.
             </p>
             <p>
-              Everything is saved automatically and stays on this device — no accounts,
-              no cloud. When you reopen a map, it is exactly as you left it.
+              Run a second screen for your players, group several maps into one scene, and
+              everything is saved automatically on this device — no accounts, no cloud.
             </p>
             <button className="btn btn-primary welcome-cta" onClick={dismissWelcome}>
               Start preparing
@@ -337,81 +349,17 @@ export function Library({ onOpenMap }: LibraryProps) {
         </div>
       )}
 
-      {collectionOpen && (
-        <div className="collection-overlay" onClick={() => setCollectionOpen(false)}>
-          <div className="collection-panel" onClick={(e) => e.stopPropagation()}>
-            <header className="collection-header">
-              <div>
-                <h2><IconCollection size={20} /> Map Collection</h2>
-                <p className="collection-sub">
-                  {collectionMaps
-                    ? `${collectionMaps.length} battle maps included with Fog Atlas — add one to your library to prepare its fog`
-                    : 'Loading…'}
-                </p>
-              </div>
-              <button className="btn btn-ghost" onClick={() => setCollectionOpen(false)} title="Close">
-                <IconClose />
-              </button>
-            </header>
-
-            <div className="collection-controls">
-              <input
-                className="collection-search"
-                placeholder="Search maps…"
-                value={collectionSearch}
-                onChange={(e) => setCollectionSearch(e.target.value)}
-              />
-              <select
-                className="collection-folder"
-                value={collectionFolder}
-                onChange={(e) => setCollectionFolder(e.target.value)}
-              >
-                <option value="all">All series ({collectionMaps?.length ?? 0})</option>
-                {collectionFolders.map((folder) => (
-                  <option key={folder} value={folder}>
-                    {folder} ({collectionMaps?.filter((m) => m.folder === folder).length})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {collectionError && <div className="upload-error">{collectionError}</div>}
-
-            <div className="collection-grid-wrap">
-              {collectionMaps && visibleCollection.length === 0 ? (
-                <div className="empty-state">No maps match your search.</div>
-              ) : (
-                <div className="collection-grid">
-                  {visibleCollection.map((entry) => (
-                    <article key={entry.id} className="collection-card">
-                      <div className="collection-thumb">
-                        <img src={collectionUrl(entry.thumb)} alt={entry.name} loading="lazy" />
-                      </div>
-                      <div className="collection-card-body">
-                        <h3 title={entry.name}>{entry.name}</h3>
-                        <p className="map-meta">
-                          {entry.folder}
-                          {entry.gridW && entry.gridH ? ` · ${entry.gridW}×${entry.gridH} squares` : ''}
-                        </p>
-                        {addedIds.has(entry.id) ? (
-                          <span className="collection-added">✓ In library</span>
-                        ) : (
-                          <button
-                            className="btn btn-primary btn-sm"
-                            disabled={addingId !== null}
-                            onClick={() => handleAddFromCollection(entry)}
-                          >
-                            {addingId === entry.id ? 'Adding…' : 'Add to library'}
-                          </button>
-                        )}
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+      {pickerOpen && (
+        <MapPicker
+          title="Map Collection"
+          subtitle="Battle maps included with Fog Atlas — add one to your library to prepare its fog"
+          pickedLabel="In library"
+          onClose={() => setPickerOpen(false)}
+          onPick={async (record) => {
+            await addMap(record);
+            await refresh();
+          }}
+        />
       )}
     </div>
   );

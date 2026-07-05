@@ -1,8 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getMap, saveFog, saveGridSettings, type GridSettings, type GridType } from './db';
+import {
+  addMap, getMap, getSceneMaps, saveFog, saveGridSettings, setMapScene,
+  type GridSettings, type GridType, type MapRecord,
+} from './db';
+import {
+  buildGridPath, strokeGrid, GRID_MIN_SIZE, GRID_MAX_SIZE, type GridConfig,
+} from './grid';
+import { openPresentChannel, type PresentMessage, PRESENT_PARAM } from './present';
+import { MapPicker } from './MapPicker';
 import {
   IconBack, IconClearFog, IconExitFullscreen, IconFit, IconFog, IconFogAll, IconFullscreen,
-  IconGridOff, IconHexGrid, IconReveal, IconSave, IconSquareGrid, IconUndo,
+  IconGridOff, IconHexGrid, IconLayers, IconPresent, IconReveal, IconSave, IconSquareGrid, IconUndo,
 } from './icons';
 
 interface MapEditorProps {
@@ -23,79 +31,7 @@ const MIN_SCALE = 0.05;
 const MAX_SCALE = 12;
 const UNDO_LIMIT = 12;
 const AUTOSAVE_DELAY = 1200;
-const GRID_MIN_SIZE = 20;
-const GRID_MAX_SIZE = 400;
-/** Below this on-screen cell size the grid is unreadable; skip drawing it. */
-const GRID_MIN_SCREEN_CELL = 5;
-
-/**
- * Build the grid overlay as a single path in map coordinates, restricted to
- * the visible region so huge maps stay fast. Returns null when the grid is
- * off or would be too dense to read at the current zoom.
- */
-function buildGridPath(
-  type: GridType,
-  size: number,
-  offsetX: number,
-  offsetY: number,
-  mapWidth: number,
-  mapHeight: number,
-  viewLeft: number,
-  viewTop: number,
-  viewRight: number,
-  viewBottom: number,
-  scale: number
-): Path2D | null {
-  if (type === 'none' || size * scale < GRID_MIN_SCREEN_CELL) return null;
-
-  const left = Math.max(0, viewLeft);
-  const top = Math.max(0, viewTop);
-  const right = Math.min(mapWidth, viewRight);
-  const bottom = Math.min(mapHeight, viewBottom);
-  if (right <= left || bottom <= top) return null;
-
-  const path = new Path2D();
-
-  if (type === 'square') {
-    for (let gx = Math.floor((left - offsetX) / size) * size + offsetX; gx <= right; gx += size) {
-      if (gx < left) continue;
-      path.moveTo(gx, top);
-      path.lineTo(gx, bottom);
-    }
-    for (let gy = Math.floor((top - offsetY) / size) * size + offsetY; gy <= bottom; gy += size) {
-      if (gy < top) continue;
-      path.moveTo(left, gy);
-      path.lineTo(right, gy);
-    }
-    return path;
-  }
-
-  // Pointy-top hexagons; `size` is the hex width (distance across flats),
-  // so the circumradius is size / sqrt(3).
-  const r = size / Math.sqrt(3);
-  const rowStep = 1.5 * r;
-  const firstRow = Math.floor((top - offsetY) / rowStep) - 1;
-  const lastRow = Math.ceil((bottom - offsetY) / rowStep) + 1;
-  const firstCol = Math.floor((left - offsetX) / size) - 1;
-  const lastCol = Math.ceil((right - offsetX) / size) + 1;
-
-  for (let row = firstRow; row <= lastRow; row++) {
-    const cy = row * rowStep + offsetY;
-    const rowShift = row % 2 !== 0 ? size / 2 : 0;
-    for (let col = firstCol; col <= lastCol; col++) {
-      const cx = col * size + rowShift + offsetX;
-      for (let k = 0; k < 6; k++) {
-        const angle = Math.PI / 6 + (k * Math.PI) / 3;
-        const px = cx + r * Math.cos(angle);
-        const py = cy + r * Math.sin(angle);
-        if (k === 0) path.moveTo(px, py);
-        else path.lineTo(px, py);
-      }
-      path.closePath();
-    }
-  }
-  return path;
-}
+const FOG_SEND_INTERVAL = 90;
 
 export function MapEditor({ mapId, onBack }: MapEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
@@ -115,12 +51,19 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
   const autosaveTimerRef = useRef(0);
   const dirtyRef = useRef(false);
 
+  const [currentMapId, setCurrentMapId] = useState(mapId);
+  const currentMapIdRef = useRef(currentMapId);
+  currentMapIdRef.current = currentMapId;
+
   const [mapName, setMapName] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [tool, setTool] = useState<Tool>('reveal');
   const [brushSize, setBrushSize] = useState(80);
-  const [fogOpacity, setFogOpacity] = useState(0.85);
+  // Display opacity of the fog for the DM only — lower makes it easy to see
+  // what lies under the fog while deciding what to reveal. The player screen
+  // always shows fully opaque black.
+  const [fogOpacity, setFogOpacity] = useState(0.55);
   const [saveState, setSaveState] = useState<SaveState>('saved');
   const [undoCount, setUndoCount] = useState(0);
   const [zoomPct, setZoomPct] = useState(100);
@@ -131,6 +74,23 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
   const [gridLineWidth, setGridLineWidth] = useState(1.2);
   const [gridOpacity, setGridOpacity] = useState(0.7);
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Scenes: sibling maps that share a sceneId
+  const [sceneId, setSceneId] = useState<string | undefined>(undefined);
+  const [sceneName, setSceneName] = useState('');
+  const [sceneMaps, setSceneMaps] = useState<MapRecord[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const sceneThumbUrls = useRef<Map<string, string>>(new Map());
+
+  // Presentation (player screen)
+  const [presenting, setPresenting] = useState(false);
+  const [presentHint, setPresentHint] = useState('');
+  const presentingRef = useRef(false);
+  presentingRef.current = presenting;
+  const channelRef = useRef<BroadcastChannel | null>(null);
+  const playerWindowRef = useRef<Window | null>(null);
+  const fogThrottleRef = useRef(0);
+  const fogPendingRef = useRef(false);
 
   const brushSizeRef = useRef(brushSize);
   brushSizeRef.current = brushSize;
@@ -150,6 +110,62 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
   gridLineWidthRef.current = gridLineWidth;
   const gridOpacityRef = useRef(gridOpacity);
   gridOpacityRef.current = gridOpacity;
+
+  /* ---------------------------------------------------- presentation send */
+
+  const currentGrid = useCallback((): GridConfig => ({
+    gridType: gridTypeRef.current,
+    gridSize: gridSizeRef.current,
+    gridOffsetX: gridOffsetXRef.current,
+    gridOffsetY: gridOffsetYRef.current,
+    gridLineWidth: gridLineWidthRef.current,
+    gridOpacity: gridOpacityRef.current,
+  }), []);
+
+  const postScene = useCallback(() => {
+    channelRef.current?.postMessage({
+      type: 'scene',
+      mapId: currentMapIdRef.current,
+      grid: currentGrid(),
+    } satisfies PresentMessage);
+  }, [currentGrid]);
+
+  const postGrid = useCallback(() => {
+    channelRef.current?.postMessage({
+      type: 'grid',
+      mapId: currentMapIdRef.current,
+      grid: currentGrid(),
+    } satisfies PresentMessage);
+  }, [currentGrid]);
+
+  const postFog = useCallback(() => {
+    const ch = channelRef.current;
+    const fogCanvas = fogCanvasRef.current;
+    if (!ch || !fogCanvas) return;
+    createImageBitmap(fogCanvas)
+      .then((bitmap) => {
+        ch.postMessage({ type: 'fog', mapId: currentMapIdRef.current, bitmap } satisfies PresentMessage);
+        bitmap.close();
+      })
+      .catch(() => {});
+  }, []);
+
+  // Throttle live fog updates while drawing; always trailing-send the final state
+  const scheduleFogSend = useCallback(() => {
+    if (!channelRef.current) return;
+    const now = performance.now();
+    if (now - fogThrottleRef.current > FOG_SEND_INTERVAL) {
+      fogThrottleRef.current = now;
+      postFog();
+    } else if (!fogPendingRef.current) {
+      fogPendingRef.current = true;
+      window.setTimeout(() => {
+        fogPendingRef.current = false;
+        fogThrottleRef.current = performance.now();
+        postFog();
+      }, FOG_SEND_INTERVAL);
+    }
+  }, [postFog]);
 
   /* ---------------------------------------------------------- rendering */
 
@@ -180,7 +196,6 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       gridOffsetYRef.current,
       image.width,
       image.height,
-      // Visible map-space region, for culling
       -x / scale,
       -y / scale,
       (canvas.width / dpr - x) / scale,
@@ -188,21 +203,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       scale
     );
     if (gridPath) {
-      // Line thickness is in screen pixels (constant while zooming);
-      // visibility scales both strokes of the dark-under-light pair
-      const lineWidth = gridLineWidthRef.current;
-      const visibility = gridOpacityRef.current;
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(0, 0, image.width, image.height);
-      ctx.clip();
-      ctx.lineWidth = (lineWidth * 2.1) / scale;
-      ctx.strokeStyle = `rgba(8, 10, 16, ${0.72 * visibility})`;
-      ctx.stroke(gridPath);
-      ctx.lineWidth = lineWidth / scale;
-      ctx.strokeStyle = `rgba(255, 255, 255, ${0.8 * visibility})`;
-      ctx.stroke(gridPath);
-      ctx.restore();
+      strokeGrid(ctx, gridPath, scale, gridLineWidthRef.current, gridOpacityRef.current, image.width, image.height);
     }
 
     // Brush cursor preview (screen space)
@@ -254,19 +255,20 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     if (!fogCanvas || !dirtyRef.current) return;
     setSaveState('saving');
     const blob = await new Promise<Blob | null>((resolve) => fogCanvas.toBlob(resolve, 'image/png'));
-    await saveFog(mapId, blob);
+    await saveFog(currentMapIdRef.current, blob);
     dirtyRef.current = false;
     setSaveState('saved');
-  }, [mapId]);
+  }, []);
 
   const markDirty = useCallback(() => {
     dirtyRef.current = true;
     setSaveState('unsaved');
+    if (presentingRef.current) scheduleFogSend();
     window.clearTimeout(autosaveTimerRef.current);
     autosaveTimerRef.current = window.setTimeout(() => {
       save().catch(console.error);
     }, AUTOSAVE_DELAY);
-  }, [save]);
+  }, [save, scheduleFogSend]);
 
   /* --------------------------------------------------------------- undo */
 
@@ -347,7 +349,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const record = await getMap(mapId);
+      const record = await getMap(currentMapId);
       if (!record) {
         setLoadError('Map not found in local storage.');
         setLoading(false);
@@ -368,7 +370,11 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       }
       imageRef.current = image;
       fogCanvasRef.current = fogCanvas;
+      dirtyRef.current = false;
+      setSaveState('saved');
       setMapName(record.name);
+      setSceneId(record.sceneId);
+      setSceneName(record.sceneName ?? '');
       setGridType(record.gridType ?? 'none');
       setGridSize(record.gridSize ?? 100);
       setGridOffsetX(record.gridOffsetX ?? 0);
@@ -376,6 +382,11 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       setGridLineWidth(record.gridLineWidth ?? 1.2);
       setGridOpacity(record.gridOpacity ?? 0.7);
       setLoading(false);
+      // Push the freshly loaded map to the player screen
+      if (presentingRef.current) {
+        postScene();
+        postFog();
+      }
     })().catch((err) => {
       console.error(err);
       setLoadError('Could not load this map.');
@@ -386,9 +397,39 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       imageRef.current?.close();
       imageRef.current = null;
     };
-  }, [mapId]);
+  }, [currentMapId, postScene, postFog]);
 
-  // Size the canvas to its container (and re-fit on first load)
+  // Load scene siblings whenever the scene changes
+  useEffect(() => {
+    if (!sceneId) {
+      setSceneMaps([]);
+      return;
+    }
+    let cancelled = false;
+    getSceneMaps(sceneId).then((members) => {
+      if (!cancelled) setSceneMaps(members);
+    }).catch(console.error);
+    return () => { cancelled = true; };
+  }, [sceneId]);
+
+  useEffect(() => {
+    const urls = sceneThumbUrls.current;
+    return () => {
+      urls.forEach((u) => URL.revokeObjectURL(u));
+      urls.clear();
+    };
+  }, []);
+
+  const sceneThumbUrl = (record: MapRecord): string => {
+    let url = sceneThumbUrls.current.get(record.id);
+    if (!url) {
+      url = URL.createObjectURL(record.thumbnail);
+      sceneThumbUrls.current.set(record.id, url);
+    }
+    return url;
+  };
+
+  // Size the canvas to its container (and re-fit on first load / map switch)
   useEffect(() => {
     if (loading) return;
     const container = containerRef.current;
@@ -409,7 +450,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     resize();
     fitToScreen();
     return () => observer.disconnect();
-  }, [loading, fitToScreen, scheduleDraw]);
+  }, [loading, currentMapId, fitToScreen, scheduleDraw]);
 
   // Redraw and persist grid settings when they change (skip the initial
   // values that were just loaded from the record)
@@ -421,12 +462,13 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       return;
     }
     scheduleDraw();
+    if (presentingRef.current) postGrid();
     const settings: GridSettings = { gridType, gridSize, gridOffsetX, gridOffsetY, gridLineWidth, gridOpacity };
     const timer = window.setTimeout(() => {
-      saveGridSettings(mapId, settings).catch(console.error);
+      saveGridSettings(currentMapIdRef.current, settings).catch(console.error);
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [gridType, gridSize, gridOffsetX, gridOffsetY, gridLineWidth, gridOpacity, loading, mapId, scheduleDraw]);
+  }, [gridType, gridSize, gridOffsetX, gridOffsetY, gridLineWidth, gridOpacity, loading, postGrid, scheduleDraw]);
 
   // Track fullscreen state (covers Esc and browser-initiated exits too)
   useEffect(() => {
@@ -455,44 +497,79 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     return () => window.removeEventListener('beforeunload', beforeUnload);
   }, [save]);
 
-  /* ---------------------------------------------------------- shortcuts */
-
+  // Close the presentation channel on unmount
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement) return;
-      if (e.code === 'Space') {
-        spaceHeldRef.current = true;
-        e.preventDefault();
-      } else if (e.key === 'r' || e.key === 'R') {
-        setTool('reveal');
-      } else if (e.key === 'f' || e.key === 'F') {
-        setTool('fog');
-      } else if (e.key === '[') {
-        setBrushSize((s) => Math.max(8, s - 12));
-      } else if (e.key === ']') {
-        setBrushSize((s) => Math.min(400, s + 12));
-      } else if (e.key === 'g' || e.key === 'G') {
-        setGridType((t) => (t === 'none' ? 'hex' : t === 'hex' ? 'square' : 'none'));
-      } else if (e.key === '0') {
-        fitToScreen();
-      } else if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-        e.preventDefault();
-        undo();
-      } else if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault();
-        save().catch(console.error);
-      }
-    };
-    const onKeyUp = (e: KeyboardEvent) => {
-      if (e.code === 'Space') spaceHeldRef.current = false;
-    };
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
     return () => {
-      window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('keyup', onKeyUp);
+      channelRef.current?.postMessage({ type: 'stopped' } satisfies PresentMessage);
+      channelRef.current?.close();
+      channelRef.current = null;
     };
-  }, [fitToScreen, save, undo]);
+  }, []);
+
+  /* ------------------------------------------------------ presentation */
+
+  const startPresenting = () => {
+    setPresentHint('');
+    const url = `${window.location.origin}${window.location.pathname}?${PRESENT_PARAM}=1`;
+    playerWindowRef.current = window.open(url, 'fog-atlas-player');
+    if (!playerWindowRef.current) {
+      setPresentHint('Allow pop-ups for this site to open the player screen.');
+      return;
+    }
+    if (!channelRef.current) {
+      const ch = openPresentChannel();
+      ch.onmessage = (e: MessageEvent<PresentMessage>) => {
+        if (e.data?.type === 'hello') {
+          postScene();
+          postGrid();
+          postFog();
+        }
+      };
+      channelRef.current = ch;
+    }
+    presentingRef.current = true;
+    setPresenting(true);
+    postScene();
+    postGrid();
+    postFog();
+  };
+
+  const stopPresenting = () => {
+    channelRef.current?.postMessage({ type: 'stopped' } satisfies PresentMessage);
+    channelRef.current?.close();
+    channelRef.current = null;
+    presentingRef.current = false;
+    setPresenting(false);
+  };
+
+  /* ------------------------------------------------------------- scenes */
+
+  const switchMap = async (id: string) => {
+    if (id === currentMapId) return;
+    window.clearTimeout(autosaveTimerRef.current);
+    await save().catch(console.error);
+    undoStackRef.current = [];
+    setUndoCount(0);
+    setLoading(true);
+    setCurrentMapId(id);
+  };
+
+  const handlePickIntoScene = async (record: MapRecord) => {
+    let sid = sceneId;
+    let sname = sceneName;
+    if (!sid) {
+      // Upgrade the current solo map into a scene
+      sid = crypto.randomUUID();
+      sname = mapName || 'Scene';
+      await setMapScene(currentMapIdRef.current, sid, sname);
+    }
+    record.sceneId = sid;
+    record.sceneName = sname;
+    await addMap(record);
+    setSceneId(sid);
+    setSceneName(sname);
+    setSceneMaps(await getSceneMaps(sid));
+  };
 
   /* ------------------------------------------------------ pointer input */
 
@@ -549,9 +626,12 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     } catch {
       // Matching best-effort release
     }
+    const wasPainting = paintingRef.current;
     paintingRef.current = false;
     panningRef.current = false;
     lastPointRef.current = null;
+    // Send the crisp final fog state to the player
+    if (wasPainting && presentingRef.current) postFog();
     scheduleDraw();
   };
 
@@ -587,6 +667,45 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     onBack();
   };
 
+  /* ---------------------------------------------------------- shortcuts */
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement) return;
+      if (e.code === 'Space') {
+        spaceHeldRef.current = true;
+        e.preventDefault();
+      } else if (e.key === 'r' || e.key === 'R') {
+        setTool('reveal');
+      } else if (e.key === 'f' || e.key === 'F') {
+        setTool('fog');
+      } else if (e.key === '[') {
+        setBrushSize((s) => Math.max(8, s - 12));
+      } else if (e.key === ']') {
+        setBrushSize((s) => Math.min(400, s + 12));
+      } else if (e.key === 'g' || e.key === 'G') {
+        setGridType((t) => (t === 'none' ? 'hex' : t === 'hex' ? 'square' : 'none'));
+      } else if (e.key === '0') {
+        fitToScreen();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        undo();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        save().catch(console.error);
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') spaceHeldRef.current = false;
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, [fitToScreen, save, undo]);
+
   /* -------------------------------------------------------------- view */
 
   if (loadError) {
@@ -605,7 +724,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
           <button className="btn btn-ghost" onClick={handleBack} title="Back to library (saves fog)">
             <IconBack />
           </button>
-          <span className="editor-title" title={mapName}>{mapName || '…'}</span>
+          <span className="editor-title" title={sceneName || mapName}>{mapName || '…'}</span>
         </div>
 
         <div className="toolbar-group tool-toggle" role="group" aria-label="Fog tools">
@@ -737,11 +856,11 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
           )}
         </div>
 
-        <div className="toolbar-group slider-group" title="How opaque the fog looks while you prepare">
-          <span className="slider-label">Fog opacity</span>
+        <div className="toolbar-group slider-group" title="How opaque the fog looks on YOUR screen — the player screen is always solid black">
+          <span className="slider-label">DM fog</span>
           <input
             type="range"
-            min={30}
+            min={20}
             max={100}
             value={Math.round(fogOpacity * 100)}
             onChange={(e) => {
@@ -768,10 +887,18 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
         </div>
 
         <div className="toolbar-group toolbar-right">
+          <button
+            className={`btn ${presenting ? 'tool-active-present' : 'btn-secondary'}`}
+            onClick={presenting ? stopPresenting : startPresenting}
+            title={presenting ? 'Stop the player screen' : 'Open a second screen for your players (drag it to your TV)'}
+          >
+            <IconPresent />
+            {presenting ? 'Presenting' : 'Player screen'}
+          </button>
           <span className={`save-status save-${saveState}`}>
-            {saveState === 'saved' && '● Saved locally'}
+            {saveState === 'saved' && '● Saved'}
             {saveState === 'saving' && '● Saving…'}
-            {saveState === 'unsaved' && '● Unsaved changes'}
+            {saveState === 'unsaved' && '● Unsaved'}
           </span>
           <button className="btn btn-primary" onClick={() => save().catch(console.error)} disabled={saveState === 'saved'} title="Save fog (Ctrl+S)">
             <IconSave />
@@ -779,6 +906,8 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
           </button>
         </div>
       </header>
+
+      {presentHint && <div className="present-hint">{presentHint}</div>}
 
       <div className="editor-canvas-wrap" ref={containerRef}>
         {loading ? (
@@ -800,9 +929,44 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
         )}
       </div>
 
+      {/* Scene bar: switch between maps of a multi-map scene, or start one */}
+      <div className="scene-bar">
+        <span className="scene-bar-label">
+          <IconLayers size={15} />
+          {sceneMaps.length > 1 ? sceneName || 'Scene' : 'Scene'}
+        </span>
+        <div className="scene-bar-maps">
+          {sceneMaps.map((m) => (
+            <button
+              key={m.id}
+              className={`scene-thumb ${m.id === currentMapId ? 'scene-thumb-active' : ''}`}
+              onClick={() => switchMap(m.id)}
+              title={m.name}
+            >
+              <img src={sceneThumbUrl(m)} alt={m.name} />
+              {m.fog && <span className="scene-thumb-dot" title="fog prepared" />}
+            </button>
+          ))}
+          <button className="scene-add" onClick={() => setPickerOpen(true)} title="Add another map to this scene">
+            +
+            <span className="scene-add-label">{sceneMaps.length > 1 ? 'Add map' : 'Add a linked map'}</span>
+          </button>
+        </div>
+      </div>
+
       <footer className="editor-statusbar">
         <span><kbd>R</kbd> reveal · <kbd>F</kbd> fog · <kbd>[</kbd><kbd>]</kbd> brush size · <kbd>G</kbd> grid · <kbd>Space</kbd>+drag or right-drag to pan · scroll to zoom · <kbd>0</kbd> fit · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Ctrl</kbd>+<kbd>S</kbd> save</span>
       </footer>
+
+      {pickerOpen && (
+        <MapPicker
+          title="Add a map to this scene"
+          subtitle="Pick another level or area — it gets its own fog. Great for stairs, floors, or linked locations."
+          pickedLabel="In scene"
+          onClose={() => setPickerOpen(false)}
+          onPick={handlePickIntoScene}
+        />
+      )}
     </div>
   );
 }

@@ -28,6 +28,10 @@ export interface MapRecord {
   gridLineWidth?: number;
   /** Grid visibility, 0..1. */
   gridOpacity?: number;
+  /** When set, this map is one level of a multi-map scene; siblings share the id. */
+  sceneId?: string;
+  /** Display name of the scene the map belongs to. */
+  sceneName?: string;
 }
 
 const DB_NAME = 'fog-atlas';
@@ -106,6 +110,31 @@ export async function saveGridSettings(id: string, settings: GridSettings): Prom
   Object.assign(record, settings);
   record.updatedAt = Date.now();
   await withStore('readwrite', (s) => s.put(record));
+}
+
+/** All maps belonging to a scene, in creation order (stable level ordering). */
+export async function getSceneMaps(sceneId: string): Promise<MapRecord[]> {
+  const maps = await withStore('readonly', (s) => s.getAll() as IDBRequest<MapRecord[]>);
+  return maps.filter((m) => m.sceneId === sceneId).sort((a, b) => a.createdAt - b.createdAt);
+}
+
+export async function setMapScene(id: string, sceneId: string | undefined, sceneName: string | undefined): Promise<void> {
+  const record = await getMap(id);
+  if (!record) throw new Error('Map not found');
+  record.sceneId = sceneId;
+  record.sceneName = sceneName;
+  record.updatedAt = Date.now();
+  await withStore('readwrite', (s) => s.put(record));
+}
+
+/** Rename a scene across all of its member maps. */
+export async function renameScene(sceneId: string, sceneName: string): Promise<void> {
+  const members = await getSceneMaps(sceneId);
+  for (const record of members) {
+    record.sceneName = sceneName;
+    record.updatedAt = Date.now();
+    await withStore('readwrite', (s) => s.put(record));
+  }
 }
 
 export async function renameMap(id: string, name: string): Promise<void> {

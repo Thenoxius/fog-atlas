@@ -14,7 +14,19 @@ A fully local fog-of-war map tool for dungeon masters. Import your campaign maps
    - Undo (Ctrl+Z), pan (Space/right-drag), zoom (scroll), fit (0)
    - Fullscreen button for distraction-free prep and play at the table
 4. **Grid overlay** (G): project a honeycomb (hex) or square grid on top of the map, with sliders for cell size (scale), X/Y offset (to line the overlay up with a grid baked into the map art), line thickness, and visibility. The grid draws above the fog so you can measure through it, and all settings are remembered per map.
-5. **Take it to the session**: fog is autosaved (and via Ctrl+S / the Save button). When you reopen a map it is exactly in the state you left it.
+5. **Multi-map scenes**: use the scene bar at the bottom of the editor to link several maps into one scene — e.g. a house and the upper floor you climb the stairs to. Each map keeps its own fog. Switch between them with a click; the library groups a scene into a single card.
+6. **Take it to the session**: fog is autosaved (and via Ctrl+S / the Save button). When you reopen a map it is exactly in the state you left it.
+
+## The two-screen setup (laptop + TV)
+
+Fog Atlas runs two screens: your **DM screen** and a **player screen** on a second display (a TV or monitor that acts as the board).
+
+- On your laptop, click **Player screen** in the editor toolbar. A second window opens — drag it onto the TV and press its fullscreen button.
+- The player window shows the whole map fit to the screen, with the grid and **fully opaque black fog** — players see only what you've revealed.
+- Your DM screen shows the fog **semi-transparent** (adjust with the *DM fog* slider) so you can see what lies underneath and decide what to reveal.
+- As you reveal or re-cover fog on your screen, the player screen updates **live**. Switching maps in a scene switches the player screen too.
+
+Both windows run entirely on your machine and communicate directly in the browser — nothing is sent over a network.
 
 ## Everything stays local
 

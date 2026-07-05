@@ -151,6 +151,26 @@ export function IconGridOff({ size = 18 }: IconProps) {
   );
 }
 
+export function IconLayers({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="m12 2 9 5-9 5-9-5 9-5Z" />
+      <path d="m3 12 9 5 9-5" />
+      <path d="m3 17 9 5 9-5" />
+    </svg>
+  );
+}
+
+export function IconPresent({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <rect x="2" y="3" width="20" height="14" rx="2" />
+      <path d="M8 21h8" />
+      <path d="M12 17v4" />
+    </svg>
+  );
+}
+
 export function IconCoffee({ size = 18 }: IconProps) {
   return (
     <svg {...base(size)}>

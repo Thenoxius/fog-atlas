@@ -288,6 +288,50 @@ h1, h2, h3 {
   font-weight: 600;
 }
 
+/* Scene (multi-map) cards */
+
+.scene-card {
+  position: relative;
+}
+
+.scene-card::before,
+.scene-card::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  z-index: -1;
+}
+
+.scene-card::before {
+  transform: translate(5px, 5px);
+  opacity: 0.55;
+}
+
+.scene-card::after {
+  transform: translate(10px, 10px);
+  opacity: 0.3;
+}
+
+.scene-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(15, 18, 28, 0.85);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
 .map-card-body {
   padding: 14px 16px 12px;
 }
@@ -443,6 +487,12 @@ h1, h2, h3 {
   align-items: center;
   gap: 10px;
   font-size: 17px;
+}
+
+.collection-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .collection-sub {
@@ -608,6 +658,22 @@ h1, h2, h3 {
   box-shadow: 0 0 12px color-mix(in srgb, var(--fog) 25%, transparent);
 }
 
+.tool-active-present {
+  background: color-mix(in srgb, var(--ok) 18%, transparent);
+  color: var(--ok);
+  border: 1px solid color-mix(in srgb, var(--ok) 50%, transparent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--ok) 30%, transparent);
+  font-weight: 600;
+}
+
+.present-hint {
+  padding: 8px 14px;
+  background: color-mix(in srgb, var(--reveal) 12%, var(--bg-raised));
+  border-bottom: 1px solid var(--border);
+  color: var(--reveal);
+  font-size: 12.5px;
+}
+
 .tool-active-grid {
   background: color-mix(in srgb, var(--ok) 14%, transparent);
   color: var(--ok);
@@ -707,4 +773,162 @@ kbd {
   color: var(--text-muted);
   font-family: inherit;
   font-size: 11px;
+}
+
+/* ---------------------------------------------------------- scene bar */
+
+.scene-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  background: var(--bg-raised);
+  border-top: 1px solid var(--border);
+  min-height: 62px;
+}
+
+.scene-bar-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.scene-bar-maps {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.scene-thumb {
+  position: relative;
+  flex: 0 0 auto;
+  width: 74px;
+  height: 46px;
+  padding: 0;
+  border: 2px solid var(--border-strong);
+  border-radius: 7px;
+  overflow: hidden;
+  cursor: pointer;
+  background: #000;
+  transition: border-color 0.15s, transform 0.15s;
+}
+
+.scene-thumb:hover {
+  transform: translateY(-1px);
+}
+
+.scene-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.scene-thumb-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.scene-thumb-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--fog);
+  border: 1px solid rgba(0, 0, 0, 0.5);
+}
+
+.scene-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  height: 46px;
+  padding: 0 14px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 18px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.scene-add:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.scene-add-label {
+  font-size: 12.5px;
+  font-weight: 550;
+}
+
+/* -------------------------------------------------------- player view */
+
+.player-view {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  overflow: hidden;
+  cursor: default;
+}
+
+.player-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.player-waiting {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+  color: var(--text-muted);
+  padding: 24px;
+}
+
+.player-waiting h2 {
+  color: var(--text);
+  font-size: 20px;
+}
+
+.player-hint {
+  font-size: 12.5px;
+  color: var(--text-faint);
+}
+
+.player-fs-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: rgba(15, 18, 28, 0.75);
+  color: var(--text);
+  cursor: pointer;
+  opacity: 1;
+  transition: opacity 0.4s;
+}
+
+.player-fs-btn.hidden {
+  opacity: 0;
+  pointer-events: none;
 }
