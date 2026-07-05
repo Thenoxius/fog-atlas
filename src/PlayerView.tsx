@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getMap } from './db';
+import { getMap, type MapLabel } from './db';
 import { buildGridPath, strokeGrid, type GridConfig } from './grid';
+import { drawLabels } from './labels';
+import { ensureMapFontsLoaded } from './fonts';
 import { openPresentChannel, type PresentMessage } from './present';
 import { IconExitFullscreen, IconFit, IconFullscreen, IconMap } from './icons';
 
@@ -36,6 +38,7 @@ export function PlayerView() {
   const imageRef = useRef<ImageBitmap | null>(null);
   const fogRef = useRef<ImageBitmap | null>(null);
   const gridRef = useRef<GridConfig>(NO_GRID);
+  const labelsRef = useRef<MapLabel[]>([]);
   const currentMapIdRef = useRef<string | null>(null);
   const genRef = useRef(0);
   const rafRef = useRef(0);
@@ -66,6 +69,9 @@ export function PlayerView() {
     const { scale, x, y } = viewRef.current;
     ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * x, dpr * y);
     ctx.drawImage(image, 0, 0);
+
+    // Labels sit under the fog, so they reveal along with the map
+    if (labelsRef.current.length) drawLabels(ctx, labelsRef.current);
 
     // Fog is fully opaque for players — solid black over hidden areas
     const fog = fogRef.current;
@@ -138,12 +144,13 @@ export function PlayerView() {
   // Load a map (image + saved fog) from IndexedDB when the DM switches.
   // The grid arrives inline from the DM so it is correct immediately.
   const loadMap = useCallback(
-    async (mapId: string, grid: GridConfig) => {
+    async (mapId: string, grid: GridConfig, labels: MapLabel[]) => {
       const gen = ++genRef.current;
       currentMapIdRef.current = mapId;
       fogRef.current?.close();
       fogRef.current = null;
       gridRef.current = grid;
+      labelsRef.current = labels;
       const record = await getMap(mapId);
       if (!record || gen !== genRef.current) return;
       const image = await createImageBitmap(record.image);
@@ -174,7 +181,7 @@ export function PlayerView() {
     channel.onmessage = (e: MessageEvent<PresentMessage>) => {
       const msg = e.data;
       if (msg.type === 'scene') {
-        loadMap(msg.mapId, msg.grid).catch(console.error);
+        loadMap(msg.mapId, msg.grid, msg.labels).catch(console.error);
       } else if (msg.type === 'fog') {
         if (msg.mapId !== currentMapIdRef.current) {
           msg.bitmap.close();
@@ -187,12 +194,17 @@ export function PlayerView() {
         if (msg.mapId !== currentMapIdRef.current) return;
         gridRef.current = msg.grid;
         scheduleDraw();
+      } else if (msg.type === 'labels') {
+        if (msg.mapId !== currentMapIdRef.current) return;
+        labelsRef.current = msg.labels;
+        scheduleDraw();
       } else if (msg.type === 'stopped') {
         setWaiting(true);
         imageRef.current?.close();
         imageRef.current = null;
         fogRef.current?.close();
         fogRef.current = null;
+        labelsRef.current = [];
         currentMapIdRef.current = null;
         scheduleDraw();
       }
@@ -219,6 +231,11 @@ export function PlayerView() {
     resize();
     return () => window.removeEventListener('resize', resize);
   }, [fitToWindow, scheduleDraw]);
+
+  // Redraw once the label fonts have loaded
+  useEffect(() => {
+    ensureMapFontsLoaded().then(() => scheduleDraw());
+  }, [scheduleDraw]);
 
   // Fullscreen + auto-hiding controls
   useEffect(() => {

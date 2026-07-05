@@ -10,6 +10,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fontsource/cinzel": "^5.2.8",
+    "@fontsource/grenze-gotisch": "^5.2.8",
+    "@fontsource/im-fell-english-sc": "^5.2.6",
+    "@fontsource/medievalsharp": "^5.2.8",
+    "@fontsource/uncial-antiqua": "^5.2.7",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },

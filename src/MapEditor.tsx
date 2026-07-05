@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  addMap, getMap, getSceneMaps, saveFog, saveGridSettings, setMapScene,
-  type GridSettings, type GridType, type MapRecord,
+  addMap, getMap, getSceneMaps, saveFog, saveGridSettings, saveLabels, setMapScene,
+  type GridSettings, type GridType, type MapLabel, type MapRecord,
 } from './db';
 import {
   buildGridPath, strokeGrid, GRID_MIN_SIZE, GRID_MAX_SIZE, type GridConfig,
 } from './grid';
+import { drawLabels, hitTestLabel, measureLabel } from './labels';
+import { MAP_FONTS, DEFAULT_FONT, LABEL_COLORS, ensureMapFontsLoaded } from './fonts';
 import { openPresentChannel, type PresentMessage, PRESENT_PARAM } from './present';
 import { MapPicker } from './MapPicker';
 import {
   IconBack, IconClearFog, IconExitFullscreen, IconFit, IconFog, IconFogAll, IconFullscreen,
-  IconGridOff, IconHexGrid, IconLayers, IconPresent, IconReveal, IconSave, IconSquareGrid, IconUndo,
+  IconGridOff, IconHexGrid, IconLayers, IconPresent, IconReveal, IconSave, IconSquareGrid,
+  IconText, IconTrash, IconUndo,
 } from './icons';
 
 interface MapEditorProps {
@@ -18,8 +21,10 @@ interface MapEditorProps {
   onBack: () => void;
 }
 
-type Tool = 'reveal' | 'fog';
+type Tool = 'reveal' | 'fog' | 'text';
 type SaveState = 'saved' | 'unsaved' | 'saving';
+/** Screen-pixel radius of the label resize handle hit area. */
+const HANDLE_HIT = 12;
 
 interface ViewTransform {
   scale: number;
@@ -82,6 +87,20 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const sceneThumbUrls = useRef<Map<string, string>>(new Map());
 
+  // Text labels
+  const [labels, setLabels] = useState<MapLabel[]>([]);
+  const [selectedLabelId, setSelectedLabelId] = useState<string | null>(null);
+  const labelsRef = useRef<MapLabel[]>([]);
+  labelsRef.current = labels;
+  const selectedLabelIdRef = useRef<string | null>(null);
+  selectedLabelIdRef.current = selectedLabelId;
+  const draggingLabelRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
+  const resizingLabelRef = useRef<{ id: string } | null>(null);
+  const labelsDirtyRef = useRef(false);
+  const labelsSaveTimerRef = useRef(0);
+  const labelTextInputRef = useRef<HTMLTextAreaElement>(null);
+  const selectedLabel = labels.find((l) => l.id === selectedLabelId) ?? null;
+
   // Presentation (player screen)
   const [presenting, setPresenting] = useState(false);
   const [presentHint, setPresentHint] = useState('');
@@ -127,6 +146,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       type: 'scene',
       mapId: currentMapIdRef.current,
       grid: currentGrid(),
+      labels: labelsRef.current,
     } satisfies PresentMessage);
   }, [currentGrid]);
 
@@ -137,6 +157,14 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       grid: currentGrid(),
     } satisfies PresentMessage);
   }, [currentGrid]);
+
+  const postLabels = useCallback(() => {
+    channelRef.current?.postMessage({
+      type: 'labels',
+      mapId: currentMapIdRef.current,
+      labels: labelsRef.current,
+    } satisfies PresentMessage);
+  }, []);
 
   const postFog = useCallback(() => {
     const ch = channelRef.current;
@@ -206,9 +234,34 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       strokeGrid(ctx, gridPath, scale, gridLineWidthRef.current, gridOpacityRef.current, image.width, image.height);
     }
 
-    // Brush cursor preview (screen space)
+    // Text labels (above fog so the DM can always see and manage them)
+    const labelsToDraw = labelsRef.current;
+    if (labelsToDraw.length) drawLabels(ctx, labelsToDraw);
+
+    // Selection box + resize handle for the selected label
+    const selId = selectedLabelIdRef.current;
+    if (toolRef.current === 'text' && selId) {
+      const sel = labelsToDraw.find((l) => l.id === selId);
+      if (sel) {
+        const box = measureLabel(ctx, sel);
+        const pad = sel.fontSize * 0.15;
+        ctx.strokeStyle = 'rgba(79, 124, 255, 0.95)';
+        ctx.lineWidth = 1.5 / scale;
+        ctx.setLineDash([6 / scale, 4 / scale]);
+        ctx.strokeRect(box.x - pad, box.y - pad, box.w + pad * 2, box.h + pad * 2);
+        ctx.setLineDash([]);
+        const hx = box.x + box.w + pad;
+        const hy = box.y + box.h + pad;
+        ctx.beginPath();
+        ctx.arc(hx, hy, HANDLE_HIT / scale, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(79, 124, 255, 0.95)';
+        ctx.fill();
+      }
+    }
+
+    // Brush cursor preview (screen space) — not shown for the text tool
     const cursor = cursorRef.current;
-    if (cursor && !panningRef.current) {
+    if (cursor && !panningRef.current && toolRef.current !== 'text') {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const radius = (brushSizeRef.current / 2) * scale;
       ctx.beginPath();
@@ -298,6 +351,39 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     scheduleDraw();
   }, [markDirty, scheduleDraw]);
 
+  /* ------------------------------------------------------------- labels */
+
+  const flushLabels = useCallback(async () => {
+    if (!labelsDirtyRef.current) return;
+    window.clearTimeout(labelsSaveTimerRef.current);
+    await saveLabels(currentMapIdRef.current, labelsRef.current);
+    labelsDirtyRef.current = false;
+  }, []);
+
+  // Update the label array: redraw, debounce-save, and stream to the player
+  const commitLabels = useCallback((next: MapLabel[]) => {
+    labelsRef.current = next;
+    setLabels(next);
+    labelsDirtyRef.current = true;
+    if (presentingRef.current) postLabels();
+    scheduleDraw();
+    window.clearTimeout(labelsSaveTimerRef.current);
+    labelsSaveTimerRef.current = window.setTimeout(() => {
+      saveLabels(currentMapIdRef.current, labelsRef.current)
+        .then(() => { labelsDirtyRef.current = false; })
+        .catch(console.error);
+    }, 500);
+  }, [postLabels, scheduleDraw]);
+
+  const updateLabel = useCallback((id: string, patch: Partial<MapLabel>) => {
+    commitLabels(labelsRef.current.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  }, [commitLabels]);
+
+  const deleteLabel = useCallback((id: string) => {
+    commitLabels(labelsRef.current.filter((l) => l.id !== id));
+    setSelectedLabelId(null);
+  }, [commitLabels]);
+
   /* ----------------------------------------------------------- painting */
 
   const screenToMap = (sx: number, sy: number) => {
@@ -375,6 +461,11 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       setMapName(record.name);
       setSceneId(record.sceneId);
       setSceneName(record.sceneName ?? '');
+      const loadedLabels = record.labels ?? [];
+      labelsRef.current = loadedLabels;
+      setLabels(loadedLabels);
+      setSelectedLabelId(null);
+      labelsDirtyRef.current = false;
       setGridType(record.gridType ?? 'none');
       setGridSize(record.gridSize ?? 100);
       setGridOffsetX(record.gridOffsetX ?? 0);
@@ -419,6 +510,11 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       urls.clear();
     };
   }, []);
+
+  // Redraw once the label fonts have loaded so text renders in the right face
+  useEffect(() => {
+    ensureMapFontsLoaded().then(() => scheduleDraw());
+  }, [scheduleDraw]);
 
   const sceneThumbUrl = (record: MapRecord): string => {
     let url = sceneThumbUrls.current.get(record.id);
@@ -548,6 +644,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     if (id === currentMapId) return;
     window.clearTimeout(autosaveTimerRef.current);
     await save().catch(console.error);
+    await flushLabels().catch(console.error);
     undoStackRef.current = [];
     setUndoCount(0);
     setLoading(true);
@@ -589,15 +686,67 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       lastPointRef.current = { x: sx, y: sy };
       return;
     }
-    if (e.button === 0) {
-      pushUndo();
-      paintingRef.current = true;
+    if (e.button !== 0) return;
+
+    if (toolRef.current === 'text') {
+      const ctx = canvas.getContext('2d')!;
+      const scale = viewRef.current.scale;
       const mapPoint = screenToMap(sx, sy);
-      paintSegment(mapPoint, mapPoint);
-      lastPointRef.current = mapPoint;
-      markDirty();
-      scheduleDraw();
+
+      // Resize handle of the selected label?
+      const selId = selectedLabelIdRef.current;
+      if (selId) {
+        const sel = labelsRef.current.find((l) => l.id === selId);
+        if (sel) {
+          const box = measureLabel(ctx, sel);
+          const pad = sel.fontSize * 0.15;
+          const hx = box.x + box.w + pad;
+          const hy = box.y + box.h + pad;
+          if (Math.hypot(mapPoint.x - hx, mapPoint.y - hy) * scale <= HANDLE_HIT + 5) {
+            resizingLabelRef.current = { id: selId };
+            return;
+          }
+        }
+      }
+      // Hit an existing label -> select and start dragging
+      const hitId = hitTestLabel(ctx, labelsRef.current, mapPoint.x, mapPoint.y);
+      if (hitId) {
+        const l = labelsRef.current.find((x) => x.id === hitId)!;
+        setSelectedLabelId(hitId);
+        selectedLabelIdRef.current = hitId;
+        draggingLabelRef.current = { id: hitId, dx: mapPoint.x - l.x, dy: mapPoint.y - l.y };
+        scheduleDraw();
+        return;
+      }
+      // Empty space -> create a new label there
+      const image = imageRef.current;
+      const defSize = image ? Math.round(Math.min(200, Math.max(24, image.width / 24))) : 64;
+      const newLabel: MapLabel = {
+        id: crypto.randomUUID(),
+        text: 'New label',
+        x: mapPoint.x,
+        y: mapPoint.y,
+        fontSize: defSize,
+        fontFamily: DEFAULT_FONT,
+        color: LABEL_COLORS[0],
+      };
+      commitLabels([...labelsRef.current, newLabel]);
+      setSelectedLabelId(newLabel.id);
+      selectedLabelIdRef.current = newLabel.id;
+      window.setTimeout(() => {
+        labelTextInputRef.current?.focus();
+        labelTextInputRef.current?.select();
+      }, 0);
+      return;
     }
+
+    pushUndo();
+    paintingRef.current = true;
+    const mapPoint = screenToMap(sx, sy);
+    paintSegment(mapPoint, mapPoint);
+    lastPointRef.current = mapPoint;
+    markDirty();
+    scheduleDraw();
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -611,7 +760,32 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       viewRef.current.x += sx - lastPointRef.current.x;
       viewRef.current.y += sy - lastPointRef.current.y;
       lastPointRef.current = { x: sx, y: sy };
-    } else if (paintingRef.current && lastPointRef.current) {
+      scheduleDraw();
+      return;
+    }
+
+    if (toolRef.current === 'text') {
+      const mp = screenToMap(sx, sy);
+      if (resizingLabelRef.current) {
+        const l = labelsRef.current.find((x) => x.id === resizingLabelRef.current!.id);
+        if (l) {
+          l.fontSize = Math.max(8, Math.round((Math.abs(mp.y - l.y) * 2) / 1.25));
+          if (presentingRef.current) postLabels();
+        }
+      } else if (draggingLabelRef.current) {
+        const d = draggingLabelRef.current;
+        const l = labelsRef.current.find((x) => x.id === d.id);
+        if (l) {
+          l.x = mp.x - d.dx;
+          l.y = mp.y - d.dy;
+          if (presentingRef.current) postLabels();
+        }
+      }
+      scheduleDraw();
+      return;
+    }
+
+    if (paintingRef.current && lastPointRef.current) {
       const mapPoint = screenToMap(sx, sy);
       paintSegment(lastPointRef.current, mapPoint);
       lastPointRef.current = mapPoint;
@@ -627,11 +801,16 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       // Matching best-effort release
     }
     const wasPainting = paintingRef.current;
+    const labelChanged = !!(draggingLabelRef.current || resizingLabelRef.current);
     paintingRef.current = false;
     panningRef.current = false;
     lastPointRef.current = null;
+    draggingLabelRef.current = null;
+    resizingLabelRef.current = null;
     // Send the crisp final fog state to the player
     if (wasPainting && presentingRef.current) postFog();
+    // Sync React state + persist after a label move/resize
+    if (labelChanged) commitLabels([...labelsRef.current]);
     scheduleDraw();
   };
 
@@ -664,6 +843,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
   const handleBack = async () => {
     window.clearTimeout(autosaveTimerRef.current);
     await save().catch(console.error);
+    await flushLabels().catch(console.error);
     onBack();
   };
 
@@ -671,7 +851,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement) return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.code === 'Space') {
         spaceHeldRef.current = true;
         e.preventDefault();
@@ -679,6 +859,8 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
         setTool('reveal');
       } else if (e.key === 'f' || e.key === 'F') {
         setTool('fog');
+      } else if (e.key === 't' || e.key === 'T') {
+        setTool('text');
       } else if (e.key === '[') {
         setBrushSize((s) => Math.max(8, s - 12));
       } else if (e.key === ']') {
@@ -687,6 +869,11 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
         setGridType((t) => (t === 'none' ? 'hex' : t === 'hex' ? 'square' : 'none'));
       } else if (e.key === '0') {
         fitToScreen();
+      } else if (e.key === 'Escape') {
+        setSelectedLabelId(null);
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedLabelIdRef.current) {
+        e.preventDefault();
+        deleteLabel(selectedLabelIdRef.current);
       } else if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
         e.preventDefault();
         undo();
@@ -704,7 +891,13 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [fitToScreen, save, undo]);
+  }, [fitToScreen, save, undo, deleteLabel]);
+
+  // Leaving the text tool clears the label selection (so the box disappears
+  // and fog painting isn't blocked)
+  useEffect(() => {
+    if (tool !== 'text') setSelectedLabelId(null);
+  }, [tool]);
 
   /* -------------------------------------------------------------- view */
 
@@ -743,6 +936,14 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
           >
             <IconFog />
             Fog
+          </button>
+          <button
+            className={`btn tool-btn ${tool === 'text' ? 'tool-active-text' : 'btn-ghost'}`}
+            onClick={() => setTool('text')}
+            title="Text — place and edit labels on the map (T)"
+          >
+            <IconText />
+            Text
           </button>
         </div>
 
@@ -926,6 +1127,64 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
             onWheel={onWheel}
             onContextMenu={(e) => e.preventDefault()}
           />
+        )}
+
+        {tool === 'text' && !loading && (
+          selectedLabel ? (
+            <div className="label-panel">
+              <textarea
+                ref={labelTextInputRef}
+                className="label-text-input"
+                rows={2}
+                value={selectedLabel.text}
+                placeholder="Label text"
+                onChange={(e) => updateLabel(selectedLabel.id, { text: e.target.value })}
+              />
+              <div className="label-row">
+                <select
+                  className="label-font-select"
+                  value={selectedLabel.fontFamily}
+                  onChange={(e) => updateLabel(selectedLabel.id, { fontFamily: e.target.value })}
+                >
+                  {MAP_FONTS.map((f) => (
+                    <option key={f.family} value={f.family} style={{ fontFamily: f.family }}>
+                      {f.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => deleteLabel(selectedLabel.id)}
+                  title="Delete label (Del)"
+                >
+                  <IconTrash size={15} />
+                </button>
+              </div>
+              <div className="label-row slider-group" title="Text size">
+                <span className="slider-label">Size</span>
+                <input
+                  type="range"
+                  min={12}
+                  max={600}
+                  value={Math.min(600, Math.round(selectedLabel.fontSize))}
+                  onChange={(e) => updateLabel(selectedLabel.id, { fontSize: Number(e.target.value) })}
+                />
+              </div>
+              <div className="label-colors">
+                {LABEL_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    className={`label-swatch ${selectedLabel.color === c ? 'label-swatch-active' : ''}`}
+                    style={{ background: c }}
+                    onClick={() => updateLabel(selectedLabel.id, { color: c })}
+                    title={c}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="label-hint">Click the map to place a label · drag to move · corner handle to resize</div>
+          )
         )}
       </div>
 

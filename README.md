@@ -9,6 +9,7 @@ A fully local fog-of-war map tool for dungeon masters. Import your campaign maps
 - **Fog of war** you paint and erase with the mouse, autosaved per map and restored exactly when you reopen it.
 - **Two-screen play** — a DM screen on your laptop and a live player screen on the TV; reveal on one, players see it on the other.
 - **Hex or square grid** overlay with adjustable size, alignment, line thickness, and visibility.
+- **Text labels** in several fantasy fonts — name regions and rooms; they reveal with the fog on the player screen.
 - **Multi-map scenes** — link maps (e.g. a building and its upper floor), each with its own fog.
 - **Bundled map collection** — hundreds of battle maps ready to use, plus your own uploads.
 - **100% local** — everything lives in your browser's storage; works offline.
@@ -25,8 +26,11 @@ A fully local fog-of-war map tool for dungeon masters. Import your campaign maps
    - Undo (Ctrl+Z), pan (Space/right-drag), zoom (scroll), fit (0)
    - Fullscreen button for distraction-free prep and play at the table
 4. **Grid overlay** (G): project a honeycomb (hex) or square grid on top of the map, with sliders for cell size (scale), X/Y offset (to line the overlay up with a grid baked into the map art), line thickness, and visibility. The grid draws above the fog so you can measure through it, and all settings are remembered per map.
-5. **Multi-map scenes**: use the scene bar at the bottom of the editor to link several maps into one scene — e.g. a house and the upper floor you climb the stairs to. Each map keeps its own fog. Switch between them with a click; the library groups a scene into a single card.
-6. **Take it to the session**: fog is autosaved (and via Ctrl+S / the Save button). When you reopen a map it is exactly in the state you left it.
+5. **Text labels** (T): with the Text tool, click the map to drop a label, then type it and pick from several fantasy fonts (Cinzel, Uncial, Medieval, Old Book, Gothic, or plain), a size, and a color. Drag labels to move them, use the corner handle (or the size slider) to scale, and delete with the panel button or the Del key. Labels are stored per map; on the player screen they sit under the fog, so a region name is revealed only once you clear the fog over it.
+6. **Multi-map scenes**: use the scene bar at the bottom of the editor to link several maps into one scene — e.g. a house and the upper floor you climb the stairs to. Each map keeps its own fog. Switch between them with a click; the library groups a scene into a single card.
+7. **Take it to the session**: fog is autosaved (and via Ctrl+S / the Save button). When you reopen a map it is exactly in the state you left it.
+
+The bundled fantasy fonts are packaged into the app (via `@fontsource`), so they work offline like everything else.
 
 ## The two-screen setup (laptop + TV)
 
@@ -78,6 +82,8 @@ Re-run it after adding maps to `assets/Battlemaps/<Series>/`; the script is incr
 | `R` / `F` | Reveal / Fog tool |
 | `[` / `]` | Smaller / larger brush |
 | `G` | Cycle grid overlay: none → hex → square |
+| `T` | Text tool (place & edit labels) |
+| `Del` | Delete the selected label |
 | `Space` + drag, right-drag, or middle-drag | Pan |
 | Scroll | Zoom at cursor |
 | `0` | Fit map to screen |

@@ -151,6 +151,16 @@ export function IconGridOff({ size = 18 }: IconProps) {
   );
 }
 
+export function IconText({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M4 7V5h16v2" />
+      <path d="M12 5v14" />
+      <path d="M9 19h6" />
+    </svg>
+  );
+}
+
 export function IconLayers({ size = 18 }: IconProps) {
   return (
     <svg {...base(size)}>

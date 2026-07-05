@@ -658,12 +658,103 @@ h1, h2, h3 {
   box-shadow: 0 0 12px color-mix(in srgb, var(--fog) 25%, transparent);
 }
 
+.tool-active-text {
+  background: color-mix(in srgb, #d8b4fe 16%, transparent);
+  color: #d8b4fe;
+  border-color: color-mix(in srgb, #d8b4fe 45%, transparent);
+  box-shadow: 0 0 12px color-mix(in srgb, #d8b4fe 25%, transparent);
+}
+
 .tool-active-present {
   background: color-mix(in srgb, var(--ok) 18%, transparent);
   color: var(--ok);
   border: 1px solid color-mix(in srgb, var(--ok) 50%, transparent);
   box-shadow: 0 0 12px color-mix(in srgb, var(--ok) 30%, transparent);
   font-weight: 600;
+}
+
+/* Text-label editing panel (floats over the canvas) */
+
+.label-panel {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 6;
+  width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+
+.label-text-input {
+  width: 100%;
+  resize: vertical;
+  padding: 7px 9px;
+  border-radius: 7px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.label-text-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.label-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.label-font-select {
+  flex: 1;
+  padding: 6px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.label-colors {
+  display: flex;
+  gap: 7px;
+}
+
+.label-swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 2px solid var(--border-strong);
+  cursor: pointer;
+  padding: 0;
+}
+
+.label-swatch-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.label-hint {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  padding: 7px 14px;
+  background: rgba(15, 18, 28, 0.85);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  pointer-events: none;
 }
 
 .present-hint {
