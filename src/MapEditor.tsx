@@ -1117,6 +1117,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
           <canvas
             ref={canvasRef}
             className="editor-canvas"
+            style={{ cursor: tool === 'text' ? 'crosshair' : 'none' }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={endPointer}
