@@ -2,6 +2,17 @@
 
 A fully local fog-of-war map tool for dungeon masters. Import your campaign maps, prepare which areas the party has explored, and take the exact fog state with you to the session — no accounts, no servers, no cloud.
 
+**▶ Try it: [thenoxius.github.io/fog-atlas](https://thenoxius.github.io/fog-atlas/)** — runs entirely in your browser; your maps never leave your device.
+
+## Features
+
+- **Fog of war** you paint and erase with the mouse, autosaved per map and restored exactly when you reopen it.
+- **Two-screen play** — a DM screen on your laptop and a live player screen on the TV; reveal on one, players see it on the other.
+- **Hex or square grid** overlay with adjustable size, alignment, line thickness, and visibility.
+- **Multi-map scenes** — link maps (e.g. a building and its upper floor), each with its own fog.
+- **Bundled map collection** — hundreds of battle maps ready to use, plus your own uploads.
+- **100% local** — everything lives in your browser's storage; works offline.
+
 ## How it works
 
 1. **Import** battle maps or region maps (any image format) into the library — via the button or by dropping files on the page. Or open the **Map Collection**: hundreds of battle maps that ship with the app, searchable and grouped by campaign/series, added to your library with one click (grid size is prefilled from the map's pixels-per-square when known).
@@ -52,7 +63,7 @@ Built with Vite + React + TypeScript. No runtime dependencies beyond React; the 
 
 ### The bundled map collection
 
-The DM's original map files live in `assets/` (gitignored — 2.4+ GB doesn't fit GitHub or Pages). The repo ships web-optimized copies instead, generated into `public/collection/` (max 3000px WebP + thumbnails + `manifest.json`) by:
+The DM's original map files live in `assets/` (gitignored — several GB of full-resolution art doesn't fit GitHub or Pages). The repo ships web-optimized copies instead, generated into `public/collection/` (max 3000px WebP + thumbnails + `manifest.json`) by:
 
 ```bash
 node scripts/build-collection.mjs
