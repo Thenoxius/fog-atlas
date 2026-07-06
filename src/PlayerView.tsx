@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getMap, type MapLabel } from './db';
+import { getMap, type MapLabel, type MapToken } from './db';
 import { buildGridPath, strokeGrid, type GridConfig } from './grid';
 import { drawLabels } from './labels';
+import { drawTokens } from './tokens';
 import { ensureMapFontsLoaded } from './fonts';
 import { openPresentChannel, type PresentMessage } from './present';
 import { IconExitFullscreen, IconFit, IconFullscreen, IconMap } from './icons';
@@ -39,6 +40,7 @@ export function PlayerView() {
   const fogRef = useRef<ImageBitmap | null>(null);
   const gridRef = useRef<GridConfig>(NO_GRID);
   const labelsRef = useRef<MapLabel[]>([]);
+  const tokensRef = useRef<MapToken[]>([]);
   const currentMapIdRef = useRef<string | null>(null);
   const genRef = useRef(0);
   const rafRef = useRef(0);
@@ -70,7 +72,8 @@ export function PlayerView() {
     ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * x, dpr * y);
     ctx.drawImage(image, 0, 0);
 
-    // Labels sit under the fog, so they reveal along with the map
+    // Tokens and labels sit under the fog, so they reveal along with the map
+    if (tokensRef.current.length) drawTokens(ctx, tokensRef.current);
     if (labelsRef.current.length) drawLabels(ctx, labelsRef.current);
 
     // Fog is fully opaque for players — solid black over hidden areas
@@ -144,13 +147,14 @@ export function PlayerView() {
   // Load a map (image + saved fog) from IndexedDB when the DM switches.
   // The grid arrives inline from the DM so it is correct immediately.
   const loadMap = useCallback(
-    async (mapId: string, grid: GridConfig, labels: MapLabel[]) => {
+    async (mapId: string, grid: GridConfig, labels: MapLabel[], tokens: MapToken[]) => {
       const gen = ++genRef.current;
       currentMapIdRef.current = mapId;
       fogRef.current?.close();
       fogRef.current = null;
       gridRef.current = grid;
       labelsRef.current = labels;
+      tokensRef.current = tokens;
       const record = await getMap(mapId);
       if (!record || gen !== genRef.current) return;
       const image = await createImageBitmap(record.image);
@@ -181,7 +185,7 @@ export function PlayerView() {
     channel.onmessage = (e: MessageEvent<PresentMessage>) => {
       const msg = e.data;
       if (msg.type === 'scene') {
-        loadMap(msg.mapId, msg.grid, msg.labels).catch(console.error);
+        loadMap(msg.mapId, msg.grid, msg.labels, msg.tokens).catch(console.error);
       } else if (msg.type === 'fog') {
         if (msg.mapId !== currentMapIdRef.current) {
           msg.bitmap.close();
@@ -198,6 +202,10 @@ export function PlayerView() {
         if (msg.mapId !== currentMapIdRef.current) return;
         labelsRef.current = msg.labels;
         scheduleDraw();
+      } else if (msg.type === 'tokens') {
+        if (msg.mapId !== currentMapIdRef.current) return;
+        tokensRef.current = msg.tokens;
+        scheduleDraw();
       } else if (msg.type === 'stopped') {
         setWaiting(true);
         imageRef.current?.close();
@@ -205,6 +213,7 @@ export function PlayerView() {
         fogRef.current?.close();
         fogRef.current = null;
         labelsRef.current = [];
+        tokensRef.current = [];
         currentMapIdRef.current = null;
         scheduleDraw();
       }

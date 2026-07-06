@@ -4,7 +4,7 @@
 // IndexedDB itself; only the live (unsaved) fog and grid stream over here.
 
 import type { GridConfig } from './grid';
-import type { MapLabel } from './db';
+import type { MapLabel, MapToken } from './db';
 
 export const PRESENT_CHANNEL = 'fog-atlas-present';
 
@@ -15,14 +15,17 @@ export type PresentMessage =
   // player -> DM: I just opened/reloaded, send me the current state
   | { type: 'hello' }
   // DM -> player: switch to this map (player loads image + saved fog from
-  // IndexedDB; grid and labels travel inline so they're right immediately)
-  | { type: 'scene'; mapId: string; grid: GridConfig; labels: MapLabel[] }
+  // IndexedDB; grid, labels, and tokens travel inline so they're right
+  // immediately)
+  | { type: 'scene'; mapId: string; grid: GridConfig; labels: MapLabel[]; tokens: MapToken[] }
   // DM -> player: live fog mask for the active map
   | { type: 'fog'; mapId: string; bitmap: ImageBitmap }
   // DM -> player: grid settings changed
   | { type: 'grid'; mapId: string; grid: GridConfig }
   // DM -> player: labels changed
   | { type: 'labels'; mapId: string; labels: MapLabel[] }
+  // DM -> player: tokens changed
+  | { type: 'tokens'; mapId: string; tokens: MapToken[] }
   // DM -> player: presentation ended
   | { type: 'stopped' };
 

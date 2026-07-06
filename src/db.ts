@@ -17,6 +17,20 @@ export interface MapLabel {
   color: string;
 }
 
+/** An icon marker placed on a map, positioned in map coordinates. */
+export interface MapToken {
+  id: string;
+  /** Emoji glyph rendered on the badge. */
+  icon: string;
+  /** Center of the token, in map pixels. */
+  x: number;
+  y: number;
+  /** Badge diameter in map pixels (scales with the map). */
+  size: number;
+  /** Background badge color. */
+  color: string;
+}
+
 export interface MapRecord {
   id: string;
   name: string;
@@ -47,6 +61,8 @@ export interface MapRecord {
   sceneName?: string;
   /** Text annotations placed on the map. */
   labels?: MapLabel[];
+  /** Icon markers placed on the map. */
+  tokens?: MapToken[];
 }
 
 const DB_NAME = 'fog-atlas';
@@ -156,6 +172,14 @@ export async function saveLabels(id: string, labels: MapLabel[]): Promise<void> 
   const record = await getMap(id);
   if (!record) throw new Error('Map not found');
   record.labels = labels;
+  record.updatedAt = Date.now();
+  await withStore('readwrite', (s) => s.put(record));
+}
+
+export async function saveTokens(id: string, tokens: MapToken[]): Promise<void> {
+  const record = await getMap(id);
+  if (!record) throw new Error('Map not found');
+  record.tokens = tokens;
   record.updatedAt = Date.now();
   await withStore('readwrite', (s) => s.put(record));
 }

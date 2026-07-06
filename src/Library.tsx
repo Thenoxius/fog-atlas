@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { addMap, deleteMap, getSceneMaps, listMaps, renameMap, renameScene, type MapRecord } from './db';
 import { buildRecordFromFile } from './mapImport';
 import { MapPicker } from './MapPicker';
-import { IconCoffee, IconCollection, IconEdit, IconLayers, IconMap, IconTrash, IconUpload } from './icons';
+import { Credits } from './Credits';
+import { IconAward, IconCoffee, IconCollection, IconEdit, IconLayers, IconMap, IconTrash, IconUpload } from './icons';
 
 const KOFI_URL = 'https://ko-fi.com/thenoxius';
 const WELCOME_SEEN_KEY = 'fog-atlas-welcome-seen';
@@ -57,6 +58,7 @@ export function Library({ onOpenMap }: LibraryProps) {
   const [renameValue, setRenameValue] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<{ kind: 'map' | 'scene'; id: string } | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [creditsOpen, setCreditsOpen] = useState(false);
   const [welcomeOpen, setWelcomeOpen] = useState(() => !localStorage.getItem(WELCOME_SEEN_KEY));
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -316,10 +318,16 @@ export function Library({ onOpenMap }: LibraryProps) {
 
       <footer className="library-footer">
         <span>Maps, fog, and thumbnails are stored in your browser's IndexedDB on this machine.</span>
-        <a className="kofi-link" href={KOFI_URL} target="_blank" rel="noreferrer" title="Buy me a coffee on Ko-fi">
-          <IconCoffee size={13} />
-          Support Fog Atlas
-        </a>
+        <span className="footer-links">
+          <button className="kofi-link footer-link-btn" onClick={() => setCreditsOpen(true)} title="See who made the built-in maps">
+            <IconAward size={13} />
+            Map credits
+          </button>
+          <a className="kofi-link" href={KOFI_URL} target="_blank" rel="noreferrer" title="Buy me a coffee on Ko-fi">
+            <IconCoffee size={13} />
+            Support Fog Atlas
+          </a>
+        </span>
       </footer>
 
       {welcomeOpen && (
@@ -348,6 +356,8 @@ export function Library({ onOpenMap }: LibraryProps) {
           </div>
         </div>
       )}
+
+      {creditsOpen && <Credits onClose={() => setCreditsOpen(false)} />}
 
       {pickerOpen && (
         <MapPicker

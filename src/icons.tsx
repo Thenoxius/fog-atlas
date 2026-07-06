@@ -161,6 +161,15 @@ export function IconText({ size = 18 }: IconProps) {
   );
 }
 
+export function IconToken({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12Z" />
+      <circle cx="12" cy="9" r="2.5" />
+    </svg>
+  );
+}
+
 export function IconLayers({ size = 18 }: IconProps) {
   return (
     <svg {...base(size)}>
@@ -177,6 +186,15 @@ export function IconPresent({ size = 18 }: IconProps) {
       <rect x="2" y="3" width="20" height="14" rx="2" />
       <path d="M8 21h8" />
       <path d="M12 17v4" />
+    </svg>
+  );
+}
+
+export function IconAward({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <circle cx="12" cy="8" r="6" />
+      <path d="m9 13.5-1.5 7.5 4.5-2.5 4.5 2.5-1.5-7.5" />
     </svg>
   );
 }

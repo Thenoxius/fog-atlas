@@ -1,19 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  addMap, getMap, getSceneMaps, saveFog, saveGridSettings, saveLabels, setMapScene,
-  type GridSettings, type GridType, type MapLabel, type MapRecord,
+  addMap, getMap, getSceneMaps, saveFog, saveGridSettings, saveLabels, saveTokens, setMapScene,
+  type GridSettings, type GridType, type MapLabel, type MapRecord, type MapToken,
 } from './db';
 import {
   buildGridPath, strokeGrid, GRID_MIN_SIZE, GRID_MAX_SIZE, type GridConfig,
 } from './grid';
 import { drawLabels, hitTestLabel, measureLabel } from './labels';
+import { drawTokens, hitTestToken } from './tokens';
 import { MAP_FONTS, DEFAULT_FONT, LABEL_COLORS, ensureMapFontsLoaded } from './fonts';
+import { TOKEN_ICONS, TOKEN_COLORS, DEFAULT_TOKEN_ICON, DEFAULT_TOKEN_COLOR } from './tokenIcons';
 import { openPresentChannel, type PresentMessage, PRESENT_PARAM } from './present';
 import { MapPicker } from './MapPicker';
 import {
   IconBack, IconClearFog, IconExitFullscreen, IconFit, IconFog, IconFogAll, IconFullscreen,
   IconGridOff, IconHexGrid, IconLayers, IconPresent, IconReveal, IconSave, IconSquareGrid,
-  IconText, IconTrash, IconUndo,
+  IconText, IconToken, IconTrash, IconUndo,
 } from './icons';
 
 interface MapEditorProps {
@@ -21,9 +23,9 @@ interface MapEditorProps {
   onBack: () => void;
 }
 
-type Tool = 'reveal' | 'fog' | 'text';
+type Tool = 'reveal' | 'fog' | 'text' | 'token';
 type SaveState = 'saved' | 'unsaved' | 'saving';
-/** Screen-pixel radius of the label resize handle hit area. */
+/** Screen-pixel radius of the label/token resize handle hit area. */
 const HANDLE_HIT = 12;
 
 interface ViewTransform {
@@ -101,6 +103,19 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
   const labelTextInputRef = useRef<HTMLTextAreaElement>(null);
   const selectedLabel = labels.find((l) => l.id === selectedLabelId) ?? null;
 
+  // Icon tokens
+  const [tokens, setTokens] = useState<MapToken[]>([]);
+  const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
+  const tokensRef = useRef<MapToken[]>([]);
+  tokensRef.current = tokens;
+  const selectedTokenIdRef = useRef<string | null>(null);
+  selectedTokenIdRef.current = selectedTokenId;
+  const draggingTokenRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
+  const resizingTokenRef = useRef<{ id: string } | null>(null);
+  const tokensDirtyRef = useRef(false);
+  const tokensSaveTimerRef = useRef(0);
+  const selectedToken = tokens.find((t) => t.id === selectedTokenId) ?? null;
+
   // Presentation (player screen)
   const [presenting, setPresenting] = useState(false);
   const [presentHint, setPresentHint] = useState('');
@@ -147,6 +162,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       mapId: currentMapIdRef.current,
       grid: currentGrid(),
       labels: labelsRef.current,
+      tokens: tokensRef.current,
     } satisfies PresentMessage);
   }, [currentGrid]);
 
@@ -163,6 +179,14 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       type: 'labels',
       mapId: currentMapIdRef.current,
       labels: labelsRef.current,
+    } satisfies PresentMessage);
+  }, []);
+
+  const postTokens = useCallback(() => {
+    channelRef.current?.postMessage({
+      type: 'tokens',
+      mapId: currentMapIdRef.current,
+      tokens: tokensRef.current,
     } satisfies PresentMessage);
   }, []);
 
@@ -234,7 +258,9 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       strokeGrid(ctx, gridPath, scale, gridLineWidthRef.current, gridOpacityRef.current, image.width, image.height);
     }
 
-    // Text labels (above fog so the DM can always see and manage them)
+    // Icon tokens and text labels (above fog so the DM can always see and manage them)
+    const tokensToDraw = tokensRef.current;
+    if (tokensToDraw.length) drawTokens(ctx, tokensToDraw);
     const labelsToDraw = labelsRef.current;
     if (labelsToDraw.length) drawLabels(ctx, labelsToDraw);
 
@@ -259,9 +285,32 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       }
     }
 
-    // Brush cursor preview (screen space) — not shown for the text tool
+    // Selection ring + resize handle for the selected token
+    const selTokId = selectedTokenIdRef.current;
+    if (toolRef.current === 'token' && selTokId) {
+      const selTok = tokensToDraw.find((t) => t.id === selTokId);
+      if (selTok) {
+        const r = selTok.size / 2;
+        const pad = Math.max(4, selTok.size * 0.12);
+        ctx.strokeStyle = 'rgba(79, 124, 255, 0.95)';
+        ctx.lineWidth = 1.5 / scale;
+        ctx.setLineDash([6 / scale, 4 / scale]);
+        ctx.beginPath();
+        ctx.arc(selTok.x, selTok.y, r + pad, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        const hx = selTok.x + (r + pad) * Math.SQRT1_2;
+        const hy = selTok.y + (r + pad) * Math.SQRT1_2;
+        ctx.beginPath();
+        ctx.arc(hx, hy, HANDLE_HIT / scale, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(79, 124, 255, 0.95)';
+        ctx.fill();
+      }
+    }
+
+    // Brush cursor preview (screen space) — not shown for the text/token tools
     const cursor = cursorRef.current;
-    if (cursor && !panningRef.current && toolRef.current !== 'text') {
+    if (cursor && !panningRef.current && (toolRef.current === 'reveal' || toolRef.current === 'fog')) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const radius = (brushSizeRef.current / 2) * scale;
       ctx.beginPath();
@@ -384,6 +433,39 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     setSelectedLabelId(null);
   }, [commitLabels]);
 
+  /* ------------------------------------------------------------- tokens */
+
+  const flushTokens = useCallback(async () => {
+    if (!tokensDirtyRef.current) return;
+    window.clearTimeout(tokensSaveTimerRef.current);
+    await saveTokens(currentMapIdRef.current, tokensRef.current);
+    tokensDirtyRef.current = false;
+  }, []);
+
+  // Update the token array: redraw, debounce-save, and stream to the player
+  const commitTokens = useCallback((next: MapToken[]) => {
+    tokensRef.current = next;
+    setTokens(next);
+    tokensDirtyRef.current = true;
+    if (presentingRef.current) postTokens();
+    scheduleDraw();
+    window.clearTimeout(tokensSaveTimerRef.current);
+    tokensSaveTimerRef.current = window.setTimeout(() => {
+      saveTokens(currentMapIdRef.current, tokensRef.current)
+        .then(() => { tokensDirtyRef.current = false; })
+        .catch(console.error);
+    }, 500);
+  }, [postTokens, scheduleDraw]);
+
+  const updateToken = useCallback((id: string, patch: Partial<MapToken>) => {
+    commitTokens(tokensRef.current.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  }, [commitTokens]);
+
+  const deleteToken = useCallback((id: string) => {
+    commitTokens(tokensRef.current.filter((t) => t.id !== id));
+    setSelectedTokenId(null);
+  }, [commitTokens]);
+
   /* ----------------------------------------------------------- painting */
 
   const screenToMap = (sx: number, sy: number) => {
@@ -466,6 +548,11 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       setLabels(loadedLabels);
       setSelectedLabelId(null);
       labelsDirtyRef.current = false;
+      const loadedTokens = record.tokens ?? [];
+      tokensRef.current = loadedTokens;
+      setTokens(loadedTokens);
+      setSelectedTokenId(null);
+      tokensDirtyRef.current = false;
       setGridType(record.gridType ?? 'none');
       setGridSize(record.gridSize ?? 100);
       setGridOffsetX(record.gridOffsetX ?? 0);
@@ -645,6 +732,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     window.clearTimeout(autosaveTimerRef.current);
     await save().catch(console.error);
     await flushLabels().catch(console.error);
+    await flushTokens().catch(console.error);
     undoStackRef.current = [];
     setUndoCount(0);
     setLoading(true);
@@ -740,6 +828,52 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       return;
     }
 
+    if (toolRef.current === 'token') {
+      const scale = viewRef.current.scale;
+      const mapPoint = screenToMap(sx, sy);
+
+      // Resize handle of the selected token?
+      const selId = selectedTokenIdRef.current;
+      if (selId) {
+        const sel = tokensRef.current.find((t) => t.id === selId);
+        if (sel) {
+          const r = sel.size / 2;
+          const pad = Math.max(4, sel.size * 0.12);
+          const hx = sel.x + (r + pad) * Math.SQRT1_2;
+          const hy = sel.y + (r + pad) * Math.SQRT1_2;
+          if (Math.hypot(mapPoint.x - hx, mapPoint.y - hy) * scale <= HANDLE_HIT + 5) {
+            resizingTokenRef.current = { id: selId };
+            return;
+          }
+        }
+      }
+      // Hit an existing token -> select and start dragging
+      const hitId = hitTestToken(tokensRef.current, mapPoint.x, mapPoint.y);
+      if (hitId) {
+        const t = tokensRef.current.find((x) => x.id === hitId)!;
+        setSelectedTokenId(hitId);
+        selectedTokenIdRef.current = hitId;
+        draggingTokenRef.current = { id: hitId, dx: mapPoint.x - t.x, dy: mapPoint.y - t.y };
+        scheduleDraw();
+        return;
+      }
+      // Empty space -> create a new token there
+      const image = imageRef.current;
+      const defSize = image ? Math.round(Math.min(160, Math.max(28, image.width / 30))) : 56;
+      const newToken: MapToken = {
+        id: crypto.randomUUID(),
+        icon: DEFAULT_TOKEN_ICON,
+        x: mapPoint.x,
+        y: mapPoint.y,
+        size: defSize,
+        color: DEFAULT_TOKEN_COLOR,
+      };
+      commitTokens([...tokensRef.current, newToken]);
+      setSelectedTokenId(newToken.id);
+      selectedTokenIdRef.current = newToken.id;
+      return;
+    }
+
     pushUndo();
     paintingRef.current = true;
     const mapPoint = screenToMap(sx, sy);
@@ -785,6 +919,27 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       return;
     }
 
+    if (toolRef.current === 'token') {
+      const mp = screenToMap(sx, sy);
+      if (resizingTokenRef.current) {
+        const t = tokensRef.current.find((x) => x.id === resizingTokenRef.current!.id);
+        if (t) {
+          t.size = Math.max(12, Math.min(900, Math.round(2 * Math.hypot(mp.x - t.x, mp.y - t.y))));
+          if (presentingRef.current) postTokens();
+        }
+      } else if (draggingTokenRef.current) {
+        const d = draggingTokenRef.current;
+        const t = tokensRef.current.find((x) => x.id === d.id);
+        if (t) {
+          t.x = mp.x - d.dx;
+          t.y = mp.y - d.dy;
+          if (presentingRef.current) postTokens();
+        }
+      }
+      scheduleDraw();
+      return;
+    }
+
     if (paintingRef.current && lastPointRef.current) {
       const mapPoint = screenToMap(sx, sy);
       paintSegment(lastPointRef.current, mapPoint);
@@ -802,15 +957,19 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     }
     const wasPainting = paintingRef.current;
     const labelChanged = !!(draggingLabelRef.current || resizingLabelRef.current);
+    const tokenChanged = !!(draggingTokenRef.current || resizingTokenRef.current);
     paintingRef.current = false;
     panningRef.current = false;
     lastPointRef.current = null;
     draggingLabelRef.current = null;
     resizingLabelRef.current = null;
+    draggingTokenRef.current = null;
+    resizingTokenRef.current = null;
     // Send the crisp final fog state to the player
     if (wasPainting && presentingRef.current) postFog();
-    // Sync React state + persist after a label move/resize
+    // Sync React state + persist after a label/token move or resize
     if (labelChanged) commitLabels([...labelsRef.current]);
+    if (tokenChanged) commitTokens([...tokensRef.current]);
     scheduleDraw();
   };
 
@@ -844,6 +1003,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     window.clearTimeout(autosaveTimerRef.current);
     await save().catch(console.error);
     await flushLabels().catch(console.error);
+    await flushTokens().catch(console.error);
     onBack();
   };
 
@@ -861,6 +1021,8 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
         setTool('fog');
       } else if (e.key === 't' || e.key === 'T') {
         setTool('text');
+      } else if (e.key === 'k' || e.key === 'K') {
+        setTool('token');
       } else if (e.key === '[') {
         setBrushSize((s) => Math.max(8, s - 12));
       } else if (e.key === ']') {
@@ -871,9 +1033,13 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
         fitToScreen();
       } else if (e.key === 'Escape') {
         setSelectedLabelId(null);
+        setSelectedTokenId(null);
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedLabelIdRef.current) {
         e.preventDefault();
         deleteLabel(selectedLabelIdRef.current);
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedTokenIdRef.current) {
+        e.preventDefault();
+        deleteToken(selectedTokenIdRef.current);
       } else if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
         e.preventDefault();
         undo();
@@ -891,12 +1057,13 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [fitToScreen, save, undo, deleteLabel]);
+  }, [fitToScreen, save, undo, deleteLabel, deleteToken]);
 
-  // Leaving the text tool clears the label selection (so the box disappears
-  // and fog painting isn't blocked)
+  // Leaving the text/token tool clears the selection (so the selection box
+  // disappears and fog painting isn't blocked)
   useEffect(() => {
     if (tool !== 'text') setSelectedLabelId(null);
+    if (tool !== 'token') setSelectedTokenId(null);
   }, [tool]);
 
   /* -------------------------------------------------------------- view */
@@ -944,6 +1111,14 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
           >
             <IconText />
             Text
+          </button>
+          <button
+            className={`btn tool-btn ${tool === 'token' ? 'tool-active-token' : 'btn-ghost'}`}
+            onClick={() => setTool('token')}
+            title="Token — place icon markers on the map (K)"
+          >
+            <IconToken />
+            Token
           </button>
         </div>
 
@@ -1117,7 +1292,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
           <canvas
             ref={canvasRef}
             className="editor-canvas"
-            style={{ cursor: tool === 'text' ? 'crosshair' : 'none' }}
+            style={{ cursor: tool === 'text' || tool === 'token' ? 'crosshair' : 'none' }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={endPointer}
@@ -1184,7 +1359,56 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
               </div>
             </div>
           ) : (
-            <div className="label-hint">Click the map to place a label · drag to move · corner handle to resize</div>
+            <div className="tool-hint">Click the map to place a label · drag to move · corner handle to resize</div>
+          )
+        )}
+
+        {tool === 'token' && !loading && (
+          selectedToken ? (
+            <div className="label-panel token-panel">
+              <div className="token-icon-grid">
+                {TOKEN_ICONS.map((def) => (
+                  <button
+                    key={def.id}
+                    className={`token-icon-btn ${selectedToken.icon === def.icon ? 'token-icon-btn-active' : ''}`}
+                    onClick={() => updateToken(selectedToken.id, { icon: def.icon })}
+                    title={def.label}
+                  >
+                    {def.icon}
+                  </button>
+                ))}
+              </div>
+              <div className="label-colors">
+                {TOKEN_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    className={`label-swatch ${selectedToken.color === c ? 'label-swatch-active' : ''}`}
+                    style={{ background: c }}
+                    onClick={() => updateToken(selectedToken.id, { color: c })}
+                    title={c}
+                  />
+                ))}
+              </div>
+              <div className="label-row slider-group" title="Token size">
+                <span className="slider-label">Size</span>
+                <input
+                  type="range"
+                  min={16}
+                  max={500}
+                  value={Math.min(500, Math.round(selectedToken.size))}
+                  onChange={(e) => updateToken(selectedToken.id, { size: Number(e.target.value) })}
+                />
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => deleteToken(selectedToken.id)}
+                  title="Delete token (Del)"
+                >
+                  <IconTrash size={15} />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="tool-hint">Click the map to place a token · drag to move · corner handle to resize</div>
           )
         )}
       </div>
@@ -1215,7 +1439,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       </div>
 
       <footer className="editor-statusbar">
-        <span><kbd>R</kbd> reveal · <kbd>F</kbd> fog · <kbd>[</kbd><kbd>]</kbd> brush size · <kbd>G</kbd> grid · <kbd>Space</kbd>+drag or right-drag to pan · scroll to zoom · <kbd>0</kbd> fit · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Ctrl</kbd>+<kbd>S</kbd> save</span>
+        <span><kbd>R</kbd> reveal · <kbd>F</kbd> fog · <kbd>[</kbd><kbd>]</kbd> brush size · <kbd>G</kbd> grid · <kbd>T</kbd> text · <kbd>K</kbd> token · <kbd>Del</kbd> delete selected · <kbd>Space</kbd>+drag or right-drag to pan · scroll to zoom · <kbd>0</kbd> fit · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Ctrl</kbd>+<kbd>S</kbd> save</span>
       </footer>
 
       {pickerOpen && (
