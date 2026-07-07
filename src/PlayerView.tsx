@@ -4,7 +4,7 @@ import { buildGridPath, strokeGrid, type GridConfig } from './grid';
 import { drawLabels } from './labels';
 import { drawTokens } from './tokens';
 import { ensureMapFontsLoaded } from './fonts';
-import { openPresentChannel, type PresentMessage } from './present';
+import { openPresentChannel, type PresentMessage, type PublicInitiativeState } from './present';
 import { IconExitFullscreen, IconFit, IconFullscreen, IconMap } from './icons';
 
 // The player screen: a dedicated window the DM drags onto the TV / board.
@@ -56,6 +56,7 @@ export function PlayerView() {
   const [waiting, setWaiting] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
+  const [initiative, setInitiative] = useState<PublicInitiativeState | null>(null);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -72,13 +73,11 @@ export function PlayerView() {
     ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * x, dpr * y);
     ctx.drawImage(image, 0, 0);
 
-    // Tokens and labels sit under the fog, so they reveal along with the map
+    // Tokens, labels, and the grid all sit under the fog, so they only
+    // become visible where the party has actually explored — a grid glowing
+    // across still-hidden areas would give away the shape of the unknown.
     if (tokensRef.current.length) drawTokens(ctx, tokensRef.current);
     if (labelsRef.current.length) drawLabels(ctx, labelsRef.current);
-
-    // Fog is fully opaque for players — solid black over hidden areas
-    const fog = fogRef.current;
-    if (fog) ctx.drawImage(fog, 0, 0);
 
     const grid = gridRef.current;
     const path = buildGridPath(
@@ -95,6 +94,10 @@ export function PlayerView() {
       scale
     );
     if (path) strokeGrid(ctx, path, scale, grid.gridLineWidth, grid.gridOpacity, image.width, image.height);
+
+    // Fog is fully opaque for players — solid black over hidden areas
+    const fog = fogRef.current;
+    if (fog) ctx.drawImage(fog, 0, 0);
 
     // Highlight ring — the DM's pointer, for calling attention to the board
     const cursor = cursorRef.current;
@@ -206,6 +209,8 @@ export function PlayerView() {
         if (msg.mapId !== currentMapIdRef.current) return;
         tokensRef.current = msg.tokens;
         scheduleDraw();
+      } else if (msg.type === 'initiative') {
+        setInitiative(msg.state);
       } else if (msg.type === 'stopped') {
         setWaiting(true);
         imageRef.current?.close();
@@ -215,6 +220,7 @@ export function PlayerView() {
         labelsRef.current = [];
         tokensRef.current = [];
         currentMapIdRef.current = null;
+        setInitiative(null);
         scheduleDraw();
       }
     };
@@ -347,6 +353,21 @@ export function PlayerView() {
         onWheel={onWheel}
         onContextMenu={(e) => e.preventDefault()}
       />
+      {initiative && initiative.order.length > 0 && (
+        <div className="player-initiative-bar">
+          {initiative.round > 0 && <span className="player-initiative-round">Round {initiative.round}</span>}
+          <div className="player-initiative-order">
+            {initiative.order.map((c) => (
+              <span
+                key={c.id}
+                className={`player-initiative-chip ${c.id === initiative.currentTurnId ? 'player-initiative-chip-active' : ''}`}
+              >
+                {c.name}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
       {waiting && (
         <div className="player-waiting">
           <span className="brand-icon welcome-icon"><IconMap size={26} /></span>

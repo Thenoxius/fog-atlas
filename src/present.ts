@@ -11,6 +11,19 @@ export const PRESENT_CHANNEL = 'fog-atlas-present';
 /** Query flag that puts the app into player-screen mode. */
 export const PRESENT_PARAM = 'present';
 
+// Turn order sent to the player screen — deliberately just id + name.
+// HP and other DM-only details never leave the DM screen.
+export interface PublicCombatant {
+  id: string;
+  name: string;
+}
+
+export interface PublicInitiativeState {
+  round: number;
+  currentTurnId: string | null;
+  order: PublicCombatant[];
+}
+
 export type PresentMessage =
   // player -> DM: I just opened/reloaded, send me the current state
   | { type: 'hello' }
@@ -26,6 +39,8 @@ export type PresentMessage =
   | { type: 'labels'; mapId: string; labels: MapLabel[] }
   // DM -> player: tokens changed
   | { type: 'tokens'; mapId: string; tokens: MapToken[] }
+  // DM -> player: initiative order changed (not tied to a specific map)
+  | { type: 'initiative'; state: PublicInitiativeState }
   // DM -> player: presentation ended
   | { type: 'stopped' };
 

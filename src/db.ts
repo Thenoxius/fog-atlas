@@ -31,6 +31,39 @@ export interface MapToken {
   color: string;
 }
 
+/** A private note pinned to a spot on the map — for the DM's eyes only. It
+ * has no size/color options and is never included in anything sent to the
+ * player screen (see present.ts and PlayerView.tsx, neither of which even
+ * reference this type). */
+export interface MapNote {
+  id: string;
+  text: string;
+  x: number;
+  y: number;
+}
+
+/** One combatant in the initiative tracker. HP is tracked for the DM's own
+ * reference only — it never leaves the DM screen. */
+export interface Combatant {
+  id: string;
+  name: string;
+  initiative: number;
+  hpCurrent?: number;
+  hpMax?: number;
+}
+
+/** The single active encounter, global to the app (not tied to a map), so
+ * combat survives switching maps or reloading the page. */
+export interface Encounter {
+  id: string;
+  round: number;
+  currentTurnId: string | null;
+  combatants: Combatant[];
+  updatedAt: number;
+}
+
+export const ACTIVE_ENCOUNTER_ID = 'active';
+
 export interface MapRecord {
   id: string;
   name: string;
@@ -63,11 +96,14 @@ export interface MapRecord {
   labels?: MapLabel[];
   /** Icon markers placed on the map. */
   tokens?: MapToken[];
+  /** Private DM-only notes placed on the map. Never sent to the player screen. */
+  notes?: MapNote[];
 }
 
 const DB_NAME = 'fog-atlas';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE = 'maps';
+const ENCOUNTER_STORE = 'initiative';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -79,6 +115,9 @@ function openDb(): Promise<IDBDatabase> {
         const db = req.result;
         if (!db.objectStoreNames.contains(STORE)) {
           db.createObjectStore(STORE, { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains(ENCOUNTER_STORE)) {
+          db.createObjectStore(ENCOUNTER_STORE, { keyPath: 'id' });
         }
       };
       req.onsuccess = () => resolve(req.result);
@@ -97,11 +136,12 @@ function requestToPromise<T>(req: IDBRequest<T>): Promise<T> {
 
 async function withStore<T>(
   mode: IDBTransactionMode,
-  fn: (store: IDBObjectStore) => IDBRequest<T>
+  fn: (store: IDBObjectStore) => IDBRequest<T>,
+  storeName: string = STORE
 ): Promise<T> {
   const db = await openDb();
-  const tx = db.transaction(STORE, mode);
-  const result = await requestToPromise(fn(tx.objectStore(STORE)));
+  const tx = db.transaction(storeName, mode);
+  const result = await requestToPromise(fn(tx.objectStore(storeName)));
   return result;
 }
 
@@ -184,6 +224,14 @@ export async function saveTokens(id: string, tokens: MapToken[]): Promise<void> 
   await withStore('readwrite', (s) => s.put(record));
 }
 
+export async function saveNotes(id: string, notes: MapNote[]): Promise<void> {
+  const record = await getMap(id);
+  if (!record) throw new Error('Map not found');
+  record.notes = notes;
+  record.updatedAt = Date.now();
+  await withStore('readwrite', (s) => s.put(record));
+}
+
 export async function renameMap(id: string, name: string): Promise<void> {
   const record = await getMap(id);
   if (!record) throw new Error('Map not found');
@@ -194,4 +242,16 @@ export async function renameMap(id: string, name: string): Promise<void> {
 
 export async function deleteMap(id: string): Promise<void> {
   await withStore('readwrite', (s) => s.delete(id));
+}
+
+export async function getEncounter(): Promise<Encounter | undefined> {
+  return withStore(
+    'readonly',
+    (s) => s.get(ACTIVE_ENCOUNTER_ID) as IDBRequest<Encounter | undefined>,
+    ENCOUNTER_STORE
+  );
+}
+
+export async function saveEncounter(encounter: Encounter): Promise<void> {
+  await withStore('readwrite', (s) => s.put(encounter), ENCOUNTER_STORE);
 }

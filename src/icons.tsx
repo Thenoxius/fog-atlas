@@ -161,6 +161,46 @@ export function IconText({ size = 18 }: IconProps) {
   );
 }
 
+export function IconBrushRound({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <circle cx="12" cy="12" r="7" />
+    </svg>
+  );
+}
+
+export function IconBrushRect({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <rect x="5" y="5" width="14" height="14" rx="1.5" />
+    </svg>
+  );
+}
+
+export function IconInitiative({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M9 6h11" />
+      <path d="M9 12h11" />
+      <path d="M9 18h11" />
+      <circle cx="4.5" cy="6" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="4.5" cy="12" r="1.4" fill="currentColor" stroke="none" />
+      <circle cx="4.5" cy="18" r="1.4" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+export function IconNote({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M8 3h10a2 2 0 0 1 2 2v10l-6 6H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" />
+      <path d="M14 21v-4a2 2 0 0 1 2-2h4" />
+      <path d="M9 8h6" />
+      <path d="M9 12h4" />
+    </svg>
+  );
+}
+
 export function IconToken({ size = 18 }: IconProps) {
   return (
     <svg {...base(size)}>

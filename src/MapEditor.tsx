@@ -1,21 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  addMap, getMap, getSceneMaps, saveFog, saveGridSettings, saveLabels, saveTokens, setMapScene,
-  type GridSettings, type GridType, type MapLabel, type MapRecord, type MapToken,
+  addMap, getMap, getSceneMaps, saveFog, saveGridSettings, saveLabels, saveNotes, saveTokens, setMapScene,
+  type GridSettings, type GridType, type MapLabel, type MapNote, type MapRecord, type MapToken,
 } from './db';
 import {
   buildGridPath, strokeGrid, GRID_MIN_SIZE, GRID_MAX_SIZE, type GridConfig,
 } from './grid';
 import { drawLabels, hitTestLabel, measureLabel } from './labels';
 import { drawTokens, hitTestToken } from './tokens';
+import { drawNoteMarkers, hitTestNote, NOTE_MARKER_SCREEN_RADIUS } from './notes';
 import { MAP_FONTS, DEFAULT_FONT, LABEL_COLORS, ensureMapFontsLoaded } from './fonts';
 import { TOKEN_ICONS, TOKEN_COLORS, DEFAULT_TOKEN_ICON, DEFAULT_TOKEN_COLOR } from './tokenIcons';
-import { openPresentChannel, type PresentMessage, PRESENT_PARAM } from './present';
+import { openPresentChannel, type PresentMessage, type PublicInitiativeState, PRESENT_PARAM } from './present';
 import { MapPicker } from './MapPicker';
+import { InitiativeTracker } from './InitiativeTracker';
 import {
-  IconBack, IconClearFog, IconExitFullscreen, IconFit, IconFog, IconFogAll, IconFullscreen,
-  IconGridOff, IconHexGrid, IconLayers, IconPresent, IconReveal, IconSave, IconSquareGrid,
-  IconText, IconToken, IconTrash, IconUndo,
+  IconBack, IconBrushRect, IconBrushRound, IconClearFog, IconExitFullscreen, IconFit, IconFog,
+  IconFogAll, IconFullscreen, IconGridOff, IconHexGrid, IconInitiative, IconLayers, IconNote, IconPresent,
+  IconReveal, IconSave, IconSquareGrid, IconText, IconToken, IconTrash, IconUndo,
 } from './icons';
 
 interface MapEditorProps {
@@ -23,7 +25,8 @@ interface MapEditorProps {
   onBack: () => void;
 }
 
-type Tool = 'reveal' | 'fog' | 'text' | 'token';
+type Tool = 'reveal' | 'fog' | 'text' | 'token' | 'note';
+type FogShape = 'brush' | 'rect';
 type SaveState = 'saved' | 'unsaved' | 'saving';
 /** Screen-pixel radius of the label/token resize handle hit area. */
 const HANDLE_HIT = 12;
@@ -67,6 +70,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
   const [loadError, setLoadError] = useState('');
   const [tool, setTool] = useState<Tool>('reveal');
   const [brushSize, setBrushSize] = useState(80);
+  const [fogShape, setFogShape] = useState<FogShape>('brush');
   // Display opacity of the fog for the DM only — lower makes it easy to see
   // what lies under the fog while deciding what to reveal. The player screen
   // always shows fully opaque black.
@@ -116,6 +120,19 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
   const tokensSaveTimerRef = useRef(0);
   const selectedToken = tokens.find((t) => t.id === selectedTokenId) ?? null;
 
+  // DM-only notes — never broadcast to the player screen (see notes.ts)
+  const [notes, setNotes] = useState<MapNote[]>([]);
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
+  const notesRef = useRef<MapNote[]>([]);
+  notesRef.current = notes;
+  const selectedNoteIdRef = useRef<string | null>(null);
+  selectedNoteIdRef.current = selectedNoteId;
+  const draggingNoteRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
+  const notesDirtyRef = useRef(false);
+  const notesSaveTimerRef = useRef(0);
+  const noteTextInputRef = useRef<HTMLTextAreaElement>(null);
+  const selectedNote = notes.find((n) => n.id === selectedNoteId) ?? null;
+
   // Presentation (player screen)
   const [presenting, setPresenting] = useState(false);
   const [presentHint, setPresentHint] = useState('');
@@ -126,8 +143,15 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
   const fogThrottleRef = useRef(0);
   const fogPendingRef = useRef(false);
 
+  // Initiative tracker: a global encounter, independent of the current map
+  const [initiativeOpen, setInitiativeOpen] = useState(false);
+  const latestInitiativeRef = useRef<PublicInitiativeState>({ round: 0, currentTurnId: null, order: [] });
+
   const brushSizeRef = useRef(brushSize);
   brushSizeRef.current = brushSize;
+  const fogShapeRef = useRef(fogShape);
+  fogShapeRef.current = fogShape;
+  const rectDragRef = useRef<{ start: { x: number; y: number }; current: { x: number; y: number } } | null>(null);
   const toolRef = useRef(tool);
   toolRef.current = tool;
   const fogOpacityRef = useRef(fogOpacity);
@@ -189,6 +213,18 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       tokens: tokensRef.current,
     } satisfies PresentMessage);
   }, []);
+
+  const postInitiative = useCallback(() => {
+    channelRef.current?.postMessage({
+      type: 'initiative',
+      state: latestInitiativeRef.current,
+    } satisfies PresentMessage);
+  }, []);
+
+  const handleInitiativeBroadcast = useCallback((state: PublicInitiativeState) => {
+    latestInitiativeRef.current = state;
+    if (presentingRef.current) postInitiative();
+  }, [postInitiative]);
 
   const postFog = useCallback(() => {
     const ch = channelRef.current;
@@ -264,6 +300,10 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     const labelsToDraw = labelsRef.current;
     if (labelsToDraw.length) drawLabels(ctx, labelsToDraw);
 
+    // DM-only note markers — always visible on this screen, never sent to the player
+    const notesToDraw = notesRef.current;
+    if (notesToDraw.length) drawNoteMarkers(ctx, notesToDraw, scale);
+
     // Selection box + resize handle for the selected label
     const selId = selectedLabelIdRef.current;
     if (toolRef.current === 'text' && selId) {
@@ -308,9 +348,47 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       }
     }
 
-    // Brush cursor preview (screen space) — not shown for the text/token tools
+    // Selection ring for the selected note (no resize handle — fixed size)
+    const selNoteId = selectedNoteIdRef.current;
+    if (toolRef.current === 'note' && selNoteId) {
+      const selNote = notesToDraw.find((n) => n.id === selNoteId);
+      if (selNote) {
+        const r = (NOTE_MARKER_SCREEN_RADIUS / scale) * 1.5;
+        ctx.strokeStyle = 'rgba(79, 124, 255, 0.95)';
+        ctx.lineWidth = 1.5 / scale;
+        ctx.setLineDash([6 / scale, 4 / scale]);
+        ctx.beginPath();
+        ctx.arc(selNote.x, selNote.y, r, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+
+    // Rectangle reveal/fog preview, while dragging out a shape
+    const rectDrag = rectDragRef.current;
+    if (rectDrag && (toolRef.current === 'reveal' || toolRef.current === 'fog')) {
+      const { start, current } = rectDrag;
+      const rx = Math.min(start.x, current.x);
+      const ry = Math.min(start.y, current.y);
+      const rw = Math.abs(current.x - start.x);
+      const rh = Math.abs(current.y - start.y);
+      const isReveal = toolRef.current === 'reveal';
+      ctx.fillStyle = isReveal ? 'rgba(255, 214, 112, 0.18)' : 'rgba(148, 163, 255, 0.18)';
+      ctx.fillRect(rx, ry, rw, rh);
+      ctx.strokeStyle = isReveal ? 'rgba(255, 214, 112, 0.95)' : 'rgba(148, 163, 255, 0.95)';
+      ctx.lineWidth = 2 / scale;
+      ctx.setLineDash([8 / scale, 5 / scale]);
+      ctx.strokeRect(rx, ry, rw, rh);
+      ctx.setLineDash([]);
+    }
+
+    // Brush cursor preview (screen space) — only for the freehand brush
     const cursor = cursorRef.current;
-    if (cursor && !panningRef.current && (toolRef.current === 'reveal' || toolRef.current === 'fog')) {
+    if (
+      cursor && !panningRef.current &&
+      (toolRef.current === 'reveal' || toolRef.current === 'fog') &&
+      fogShapeRef.current === 'brush'
+    ) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const radius = (brushSizeRef.current / 2) * scale;
       ctx.beginPath();
@@ -466,6 +544,39 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     setSelectedTokenId(null);
   }, [commitTokens]);
 
+  /* -------------------------------------------------------------- notes */
+  // Notes are DM-only: unlike labels/tokens, commitNotes never posts to the
+  // present channel — there is no wire message for notes at all.
+
+  const flushNotes = useCallback(async () => {
+    if (!notesDirtyRef.current) return;
+    window.clearTimeout(notesSaveTimerRef.current);
+    await saveNotes(currentMapIdRef.current, notesRef.current);
+    notesDirtyRef.current = false;
+  }, []);
+
+  const commitNotes = useCallback((next: MapNote[]) => {
+    notesRef.current = next;
+    setNotes(next);
+    notesDirtyRef.current = true;
+    scheduleDraw();
+    window.clearTimeout(notesSaveTimerRef.current);
+    notesSaveTimerRef.current = window.setTimeout(() => {
+      saveNotes(currentMapIdRef.current, notesRef.current)
+        .then(() => { notesDirtyRef.current = false; })
+        .catch(console.error);
+    }, 500);
+  }, [scheduleDraw]);
+
+  const updateNote = useCallback((id: string, patch: Partial<MapNote>) => {
+    commitNotes(notesRef.current.map((n) => (n.id === id ? { ...n, ...patch } : n)));
+  }, [commitNotes]);
+
+  const deleteNote = useCallback((id: string) => {
+    commitNotes(notesRef.current.filter((n) => n.id !== id));
+    setSelectedNoteId(null);
+  }, [commitNotes]);
+
   /* ----------------------------------------------------------- painting */
 
   const screenToMap = (sx: number, sy: number) => {
@@ -553,6 +664,11 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       setTokens(loadedTokens);
       setSelectedTokenId(null);
       tokensDirtyRef.current = false;
+      const loadedNotes = record.notes ?? [];
+      notesRef.current = loadedNotes;
+      setNotes(loadedNotes);
+      setSelectedNoteId(null);
+      notesDirtyRef.current = false;
       setGridType(record.gridType ?? 'none');
       setGridSize(record.gridSize ?? 100);
       setGridOffsetX(record.gridOffsetX ?? 0);
@@ -706,6 +822,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
           postScene();
           postGrid();
           postFog();
+          postInitiative();
         }
       };
       channelRef.current = ch;
@@ -715,6 +832,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     postScene();
     postGrid();
     postFog();
+    postInitiative();
   };
 
   const stopPresenting = () => {
@@ -733,6 +851,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     await save().catch(console.error);
     await flushLabels().catch(console.error);
     await flushTokens().catch(console.error);
+    await flushNotes().catch(console.error);
     undoStackRef.current = [];
     setUndoCount(0);
     setLoading(true);
@@ -874,6 +993,44 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       return;
     }
 
+    if (toolRef.current === 'note') {
+      const scale = viewRef.current.scale;
+      const mapPoint = screenToMap(sx, sy);
+
+      // Hit an existing note -> select and start dragging
+      const hitId = hitTestNote(notesRef.current, mapPoint.x, mapPoint.y, scale);
+      if (hitId) {
+        const n = notesRef.current.find((x) => x.id === hitId)!;
+        setSelectedNoteId(hitId);
+        selectedNoteIdRef.current = hitId;
+        draggingNoteRef.current = { id: hitId, dx: mapPoint.x - n.x, dy: mapPoint.y - n.y };
+        scheduleDraw();
+        return;
+      }
+      // Empty space -> create a new note there
+      const newNote: MapNote = {
+        id: crypto.randomUUID(),
+        text: '',
+        x: mapPoint.x,
+        y: mapPoint.y,
+      };
+      commitNotes([...notesRef.current, newNote]);
+      setSelectedNoteId(newNote.id);
+      selectedNoteIdRef.current = newNote.id;
+      window.setTimeout(() => {
+        noteTextInputRef.current?.focus();
+      }, 0);
+      return;
+    }
+
+    if (fogShapeRef.current === 'rect') {
+      const mapPoint = screenToMap(sx, sy);
+      pushUndo();
+      rectDragRef.current = { start: mapPoint, current: mapPoint };
+      scheduleDraw();
+      return;
+    }
+
     pushUndo();
     paintingRef.current = true;
     const mapPoint = screenToMap(sx, sy);
@@ -894,6 +1051,12 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       viewRef.current.x += sx - lastPointRef.current.x;
       viewRef.current.y += sy - lastPointRef.current.y;
       lastPointRef.current = { x: sx, y: sy };
+      scheduleDraw();
+      return;
+    }
+
+    if (rectDragRef.current) {
+      rectDragRef.current.current = screenToMap(sx, sy);
       scheduleDraw();
       return;
     }
@@ -940,6 +1103,20 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       return;
     }
 
+    if (toolRef.current === 'note') {
+      const mp = screenToMap(sx, sy);
+      if (draggingNoteRef.current) {
+        const d = draggingNoteRef.current;
+        const n = notesRef.current.find((x) => x.id === d.id);
+        if (n) {
+          n.x = mp.x - d.dx;
+          n.y = mp.y - d.dy;
+        }
+      }
+      scheduleDraw();
+      return;
+    }
+
     if (paintingRef.current && lastPointRef.current) {
       const mapPoint = screenToMap(sx, sy);
       paintSegment(lastPointRef.current, mapPoint);
@@ -958,6 +1135,8 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     const wasPainting = paintingRef.current;
     const labelChanged = !!(draggingLabelRef.current || resizingLabelRef.current);
     const tokenChanged = !!(draggingTokenRef.current || resizingTokenRef.current);
+    const noteChanged = !!draggingNoteRef.current;
+    const rectDrag = rectDragRef.current;
     paintingRef.current = false;
     panningRef.current = false;
     lastPointRef.current = null;
@@ -965,11 +1144,33 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     resizingLabelRef.current = null;
     draggingTokenRef.current = null;
     resizingTokenRef.current = null;
+    draggingNoteRef.current = null;
+    rectDragRef.current = null;
+
+    let wasRectApplied = false;
+    if (rectDrag) {
+      const rx = Math.min(rectDrag.start.x, rectDrag.current.x);
+      const ry = Math.min(rectDrag.start.y, rectDrag.current.y);
+      const rw = Math.abs(rectDrag.current.x - rectDrag.start.x);
+      const rh = Math.abs(rectDrag.current.y - rectDrag.start.y);
+      const fogCanvas = fogCanvasRef.current;
+      if (fogCanvas && rw > 0.5 && rh > 0.5) {
+        const ctx = fogCanvas.getContext('2d')!;
+        ctx.globalCompositeOperation = toolRef.current === 'fog' ? 'source-over' : 'destination-out';
+        ctx.fillStyle = '#000';
+        ctx.fillRect(rx, ry, rw, rh);
+        ctx.globalCompositeOperation = 'source-over';
+        markDirty();
+        wasRectApplied = true;
+      }
+    }
+
     // Send the crisp final fog state to the player
-    if (wasPainting && presentingRef.current) postFog();
+    if ((wasPainting || wasRectApplied) && presentingRef.current) postFog();
     // Sync React state + persist after a label/token move or resize
     if (labelChanged) commitLabels([...labelsRef.current]);
     if (tokenChanged) commitTokens([...tokensRef.current]);
+    if (noteChanged) commitNotes([...notesRef.current]);
     scheduleDraw();
   };
 
@@ -1004,6 +1205,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     await save().catch(console.error);
     await flushLabels().catch(console.error);
     await flushTokens().catch(console.error);
+    await flushNotes().catch(console.error);
     onBack();
   };
 
@@ -1023,6 +1225,10 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
         setTool('text');
       } else if (e.key === 'k' || e.key === 'K') {
         setTool('token');
+      } else if (e.key === 'n' || e.key === 'N') {
+        setTool('note');
+      } else if (e.key === 'b' || e.key === 'B') {
+        setFogShape((s) => (s === 'brush' ? 'rect' : 'brush'));
       } else if (e.key === '[') {
         setBrushSize((s) => Math.max(8, s - 12));
       } else if (e.key === ']') {
@@ -1034,12 +1240,16 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       } else if (e.key === 'Escape') {
         setSelectedLabelId(null);
         setSelectedTokenId(null);
+        setSelectedNoteId(null);
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedLabelIdRef.current) {
         e.preventDefault();
         deleteLabel(selectedLabelIdRef.current);
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedTokenIdRef.current) {
         e.preventDefault();
         deleteToken(selectedTokenIdRef.current);
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNoteIdRef.current) {
+        e.preventDefault();
+        deleteNote(selectedNoteIdRef.current);
       } else if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
         e.preventDefault();
         undo();
@@ -1057,13 +1267,14 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [fitToScreen, save, undo, deleteLabel, deleteToken]);
+  }, [fitToScreen, save, undo, deleteLabel, deleteToken, deleteNote]);
 
   // Leaving the text/token tool clears the selection (so the selection box
   // disappears and fog painting isn't blocked)
   useEffect(() => {
     if (tool !== 'text') setSelectedLabelId(null);
     if (tool !== 'token') setSelectedTokenId(null);
+    if (tool !== 'note') setSelectedNoteId(null);
   }, [tool]);
 
   /* -------------------------------------------------------------- view */
@@ -1120,7 +1331,34 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
             <IconToken />
             Token
           </button>
+          <button
+            className={`btn tool-btn ${tool === 'note' ? 'tool-active-note' : 'btn-ghost'}`}
+            onClick={() => setTool('note')}
+            title="Note — private DM-only notes, never shown to players (N)"
+          >
+            <IconNote />
+            Note
+          </button>
         </div>
+
+        {(tool === 'reveal' || tool === 'fog') && (
+          <div className="toolbar-group" role="group" aria-label="Brush shape">
+            <button
+              className={`btn ${fogShape === 'brush' ? 'tool-active-shape' : 'btn-ghost'}`}
+              onClick={() => setFogShape('brush')}
+              title="Freehand brush (B toggles)"
+            >
+              <IconBrushRound />
+            </button>
+            <button
+              className={`btn ${fogShape === 'rect' ? 'tool-active-shape' : 'btn-ghost'}`}
+              onClick={() => setFogShape('rect')}
+              title="Rectangle — drag to reveal or fog a whole area at once (B toggles)"
+            >
+              <IconBrushRect />
+            </button>
+          </div>
+        )}
 
         <div className="toolbar-group slider-group" title="Brush size ( [ and ] )">
           <span className="slider-label">Brush</span>
@@ -1129,6 +1367,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
             min={8}
             max={400}
             value={brushSize}
+            disabled={fogShape === 'rect'}
             onChange={(e) => setBrushSize(Number(e.target.value))}
           />
           <span className="slider-value">{brushSize}</span>
@@ -1264,6 +1503,14 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
 
         <div className="toolbar-group toolbar-right">
           <button
+            className={`btn ${initiativeOpen ? 'tool-active-initiative' : 'btn-secondary'}`}
+            onClick={() => setInitiativeOpen((o) => !o)}
+            title="Initiative tracker — turn order, synced to the player screen"
+          >
+            <IconInitiative />
+            Initiative
+          </button>
+          <button
             className={`btn ${presenting ? 'tool-active-present' : 'btn-secondary'}`}
             onClick={presenting ? stopPresenting : startPresenting}
             title={presenting ? 'Stop the player screen' : 'Open a second screen for your players (drag it to your TV)'}
@@ -1292,7 +1539,12 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
           <canvas
             ref={canvasRef}
             className="editor-canvas"
-            style={{ cursor: tool === 'text' || tool === 'token' ? 'crosshair' : 'none' }}
+            style={{
+              cursor:
+                tool === 'text' || tool === 'token' || tool === 'note' || ((tool === 'reveal' || tool === 'fog') && fogShape === 'rect')
+                  ? 'crosshair'
+                  : 'none',
+            }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={endPointer}
@@ -1411,6 +1663,37 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
             <div className="tool-hint">Click the map to place a token · drag to move · corner handle to resize</div>
           )
         )}
+
+        {tool === 'note' && !loading && (
+          selectedNote ? (
+            <div className="label-panel note-panel">
+              <textarea
+                ref={noteTextInputRef}
+                className="label-text-input"
+                rows={4}
+                value={selectedNote.text}
+                placeholder="DM-only note…"
+                onChange={(e) => updateNote(selectedNote.id, { text: e.target.value })}
+              />
+              <div className="label-row">
+                <span className="note-privacy-hint">DM only — never shown to players</span>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => deleteNote(selectedNote.id)}
+                  title="Delete note (Del)"
+                >
+                  <IconTrash size={15} />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="tool-hint">Click the map to place a private note · drag to move</div>
+          )
+        )}
+
+        {initiativeOpen && (
+          <InitiativeTracker onClose={() => setInitiativeOpen(false)} onBroadcast={handleInitiativeBroadcast} />
+        )}
       </div>
 
       {/* Scene bar: switch between maps of a multi-map scene, or start one */}
@@ -1439,7 +1722,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       </div>
 
       <footer className="editor-statusbar">
-        <span><kbd>R</kbd> reveal · <kbd>F</kbd> fog · <kbd>[</kbd><kbd>]</kbd> brush size · <kbd>G</kbd> grid · <kbd>T</kbd> text · <kbd>K</kbd> token · <kbd>Del</kbd> delete selected · <kbd>Space</kbd>+drag or right-drag to pan · scroll to zoom · <kbd>0</kbd> fit · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Ctrl</kbd>+<kbd>S</kbd> save</span>
+        <span><kbd>R</kbd> reveal · <kbd>F</kbd> fog · <kbd>B</kbd> brush/rectangle · <kbd>[</kbd><kbd>]</kbd> brush size · <kbd>G</kbd> grid · <kbd>T</kbd> text · <kbd>K</kbd> token · <kbd>N</kbd> note · <kbd>Del</kbd> delete selected · <kbd>Space</kbd>+drag or right-drag to pan · scroll to zoom · <kbd>0</kbd> fit · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Ctrl</kbd>+<kbd>S</kbd> save</span>
       </footer>
 
       {pickerOpen && (
