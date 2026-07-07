@@ -4,12 +4,17 @@
 # static files. The bundled map collection lives in the separate
 # fog-atlas-collection repo and is checked out into public/collection/
 # before the build (see also scripts/fetch-collection.mjs for local dev).
+# The weekly schedule exists so maps added to fog-atlas-collection reach the
+# live site even on a week with no app-repo commits — that repo's own pushes
+# don't trigger this workflow, only pushes here or workflow_dispatch do.
 name: Deploy to GitHub Pages
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    - cron: '17 4 * * 1'
 
 permissions:
   contents: read

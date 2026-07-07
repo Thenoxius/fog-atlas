@@ -784,17 +784,23 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     }
   }, []);
 
-  // Flush unsaved fog when leaving the page
+  // Flush unsaved fog/labels/tokens/notes when leaving the page — otherwise
+  // an edit still sitting in its 500ms debounce window would be lost
   useEffect(() => {
     const beforeUnload = (e: BeforeUnloadEvent) => {
-      if (dirtyRef.current) {
-        save().catch(console.error);
+      const dirty =
+        dirtyRef.current || labelsDirtyRef.current || tokensDirtyRef.current || notesDirtyRef.current;
+      if (dirty) {
+        if (dirtyRef.current) save().catch(console.error);
+        flushLabels().catch(console.error);
+        flushTokens().catch(console.error);
+        flushNotes().catch(console.error);
         e.preventDefault();
       }
     };
     window.addEventListener('beforeunload', beforeUnload);
     return () => window.removeEventListener('beforeunload', beforeUnload);
-  }, [save]);
+  }, [save, flushLabels, flushTokens, flushNotes]);
 
   // Close the presentation channel on unmount
   useEffect(() => {

@@ -27,3 +27,6 @@ dist-ssr
 # (github.com/Thenoxius/fog-atlas-collection) and is fetched into
 # public/collection/ by scripts/fetch-collection.mjs — never tracked here.
 /public/collection/
+# Temp clone used by scripts/fetch-collection.mjs, deleted when it finishes;
+# ignored too in case it's interrupted mid-run (network failure, Ctrl+C).
+/.collection-src/

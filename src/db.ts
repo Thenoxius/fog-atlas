@@ -43,13 +43,15 @@ export interface MapNote {
 }
 
 /** One combatant in the initiative tracker. HP is tracked for the DM's own
- * reference only — it never leaves the DM screen. */
+ * reference only — it never leaves the DM screen. isEnemy is the opposite:
+ * it's meant for players to see, so it travels in PublicCombatant too. */
 export interface Combatant {
   id: string;
   name: string;
   initiative: number;
   hpCurrent?: number;
   hpMax?: number;
+  isEnemy?: boolean;
 }
 
 /** The single active encounter, global to the app (not tied to a map), so

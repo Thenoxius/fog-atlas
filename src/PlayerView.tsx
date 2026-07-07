@@ -360,7 +360,7 @@ export function PlayerView() {
             {initiative.order.map((c) => (
               <span
                 key={c.id}
-                className={`player-initiative-chip ${c.id === initiative.currentTurnId ? 'player-initiative-chip-active' : ''}`}
+                className={`player-initiative-chip ${c.id === initiative.currentTurnId ? 'player-initiative-chip-active' : ''} ${c.isEnemy ? 'player-initiative-chip-enemy' : ''}`}
               >
                 {c.name}
               </span>

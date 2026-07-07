@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getEncounter, saveEncounter, ACTIVE_ENCOUNTER_ID, type Combatant, type Encounter } from './db';
 import type { PublicInitiativeState } from './present';
 import { IconClose, IconInitiative, IconTrash } from './icons';
+
+const SAVE_DEBOUNCE = 500;
 
 interface InitiativeTrackerProps {
   onClose: () => void;
@@ -26,7 +28,7 @@ function toPublic(encounter: Encounter): PublicInitiativeState {
   return {
     round: encounter.round,
     currentTurnId: encounter.currentTurnId,
-    order: sortByInitiative(encounter.combatants).map((c) => ({ id: c.id, name: c.name })),
+    order: sortByInitiative(encounter.combatants).map((c) => ({ id: c.id, name: c.name, isEnemy: !!c.isEnemy })),
   };
 }
 
@@ -35,6 +37,15 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
   const [newName, setNewName] = useState('');
   const [newInitiative, setNewInitiative] = useState('');
   const [confirmingReset, setConfirmingReset] = useState(false);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const initInputRef = useRef<HTMLInputElement>(null);
+
+  // Debounce the IndexedDB write (so typing a name doesn't hit the DB on
+  // every keystroke) while keeping local state + the player broadcast
+  // immediate. pendingRef lets beforeunload/unmount flush a save that's
+  // still sitting in that debounce window instead of losing it.
+  const pendingRef = useRef<Encounter | null>(null);
+  const saveTimerRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -53,25 +64,47 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const flush = () => {
+      if (pendingRef.current) {
+        window.clearTimeout(saveTimerRef.current);
+        saveEncounter(pendingRef.current).catch(console.error);
+        pendingRef.current = null;
+      }
+    };
+    window.addEventListener('beforeunload', flush);
+    return () => {
+      flush();
+      window.removeEventListener('beforeunload', flush);
+    };
+  }, []);
+
   if (!encounter) return null;
 
   const commit = (next: Encounter) => {
     const withTimestamp = { ...next, updatedAt: Date.now() };
     setEncounter(withTimestamp);
-    saveEncounter(withTimestamp).catch(console.error);
     onBroadcast(toPublic(withTimestamp));
+    pendingRef.current = withTimestamp;
+    window.clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = window.setTimeout(() => {
+      pendingRef.current = null;
+      saveEncounter(withTimestamp).catch(console.error);
+    }, SAVE_DEBOUNCE);
   };
 
   const sorted = sortByInitiative(encounter.combatants);
 
   const handleAdd = () => {
     const name = newName.trim();
+    if (!name || newInitiative.trim() === '') return;
     const initiative = Number(newInitiative);
-    if (!name || Number.isNaN(initiative)) return;
+    if (Number.isNaN(initiative)) return;
     const combatant: Combatant = { id: crypto.randomUUID(), name, initiative };
     commit({ ...encounter, combatants: [...encounter.combatants, combatant] });
     setNewName('');
     setNewInitiative('');
+    nameInputRef.current?.focus();
   };
 
   const handleNextTurn = () => {
@@ -113,7 +146,22 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
           <p className="initiative-empty">Add combatants below to start tracking turns.</p>
         ) : (
           sorted.map((c) => (
-            <div key={c.id} className={`initiative-row ${c.id === encounter.currentTurnId ? 'initiative-row-active' : ''}`}>
+            <div
+              key={c.id}
+              className={`initiative-row ${c.id === encounter.currentTurnId ? 'initiative-row-active' : ''} ${c.isEnemy ? 'initiative-row-enemy' : ''}`}
+            >
+              <input
+                type="checkbox"
+                className="initiative-enemy-checkbox"
+                checked={!!c.isEnemy}
+                title="Enemy — shown to players so they can spot enemy turns"
+                onChange={(e) =>
+                  commit({
+                    ...encounter,
+                    combatants: encounter.combatants.map((x) => (x.id === c.id ? { ...x, isEnemy: e.target.checked } : x)),
+                  })
+                }
+              />
               <input
                 className="initiative-name-input"
                 value={c.name}
@@ -185,19 +233,32 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
 
       <div className="initiative-add-row">
         <input
+          ref={nameInputRef}
           className="initiative-name-input"
           placeholder="Name"
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            // Enter here moves to Initiative rather than submitting, since
+            // pressing Enter with Initiative still empty used to silently
+            // add a combatant with initiative 0 instead of doing nothing.
+            if (newName.trim()) initInputRef.current?.focus();
+          }}
         />
         <input
+          ref={initInputRef}
           type="number"
           className="initiative-init-input"
           placeholder="Init"
           value={newInitiative}
           onChange={(e) => setNewInitiative(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            handleAdd();
+          }}
         />
         <button className="btn btn-secondary btn-sm" onClick={handleAdd} disabled={!newName.trim() || newInitiative === ''}>
           Add

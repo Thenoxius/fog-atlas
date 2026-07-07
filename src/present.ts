@@ -11,11 +11,13 @@ export const PRESENT_CHANNEL = 'fog-atlas-present';
 /** Query flag that puts the app into player-screen mode. */
 export const PRESENT_PARAM = 'present';
 
-// Turn order sent to the player screen — deliberately just id + name.
-// HP and other DM-only details never leave the DM screen.
+// Turn order sent to the player screen — deliberately just id + name (+
+// isEnemy, which is meant to be player-visible so they can spot enemy turns
+// at a glance). HP and other DM-only details never leave the DM screen.
 export interface PublicCombatant {
   id: string;
   name: string;
+  isEnemy: boolean;
 }
 
 export interface PublicInitiativeState {

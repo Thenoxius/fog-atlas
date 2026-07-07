@@ -1184,6 +1184,27 @@ kbd {
   box-shadow: 0 0 0 1px var(--accent), 0 0 12px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
+/* Enemy rows get a slight red tint always, and a strong red instead of the
+   usual accent glow when it's their turn — an at-a-glance "watch out" cue
+   that also carries over to the player screen's turn-order chips. */
+.initiative-row-enemy {
+  background: color-mix(in srgb, var(--danger) 12%, var(--bg-panel));
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+}
+
+.initiative-row-enemy.initiative-row-active {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 1px var(--danger), 0 0 12px color-mix(in srgb, var(--danger) 45%, transparent);
+}
+
+.initiative-enemy-checkbox {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--danger);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
 .initiative-name-input {
   flex: 1;
   min-width: 0;
@@ -1359,4 +1380,20 @@ kbd {
   color: var(--accent-contrast);
   border-color: var(--accent);
   box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+/* Enemy turns get a red chip instead — a slight tint at all times so
+   players can spot enemies in the order at a glance, strong red on their
+   actual turn instead of the usual accent color. */
+.player-initiative-chip-enemy {
+  background: color-mix(in srgb, var(--danger) 16%, var(--bg-panel));
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  color: color-mix(in srgb, var(--danger) 70%, var(--text));
+}
+
+.player-initiative-chip-enemy.player-initiative-chip-active {
+  background: var(--danger);
+  color: var(--accent-contrast);
+  border-color: var(--danger);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--danger) 60%, transparent);
 }
