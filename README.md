@@ -4,6 +4,8 @@ A fully local fog-of-war map tool for dungeon masters. Import your campaign maps
 
 **▶ Try it: [thenoxius.github.io/fog-atlas](https://thenoxius.github.io/fog-atlas/)** — runs entirely in your browser; your maps never leave your device.
 
+> **Why this is safe for your table:** Fog Atlas has no backend, no account, and no analytics — there is nothing to sign up for and nothing being tracked. Your campaign maps, fog state, and DM notes are stored only in your own browser's local storage (IndexedDB) and are never uploaded anywhere. Open the page, do your prep, close the tab; it's still there next time, on this device only. You can even use it fully offline once it's loaded. If you ever want to double-check, the entire source is open — see [Development](#development) — and the [License](#license) section covers what that means for reuse.
+
 ## Features
 
 - **Fog of war** you paint and erase with the mouse, autosaved per map and restored exactly when you reopen it.
@@ -84,6 +86,8 @@ npm run preview  # serve the production build locally
 
 Built with Vite + React + TypeScript. No runtime dependencies beyond React; the canvas, fog compositing (`destination-out` erasing), and IndexedDB layer are hand-rolled.
 
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for local setup and ground rules.
+
 ### The bundled map collection
 
 The DM's original map files live in `assets/` (gitignored — several GB of full-resolution art doesn't fit GitHub or Pages). The repo ships web-optimized copies instead, generated into `public/collection/` (max 3000px WebP + thumbnails + `manifest.json`) by:
@@ -95,6 +99,10 @@ node scripts/build-collection.mjs
 Re-run it after adding maps to `assets/Battlemaps/<Series>/`; the script is incremental and parses grid dimensions and pixels-per-square from the filenames.
 
 `scripts/scan-metadata.mjs` is a one-off helper that scans `assets/` for embedded EXIF/IPTC/XMP author or copyright fields, in case source files ever carry creator attribution worth surfacing in the [Credits](#credits) modal.
+
+## License
+
+The Fog Atlas source code is [MIT licensed](LICENSE). The bundled battle maps under `public/collection/` are the work of other artists and are **not** covered by that license — see [Credits](#credits).
 
 ## Keyboard shortcuts
 
