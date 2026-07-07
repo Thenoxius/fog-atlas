@@ -1,7 +1,9 @@
 # Staging deploy: every push to main builds the app and publishes it to
 # GitHub Pages. The deployed app is still fully local-first — all map data
 # stays in the visitor's own browser (IndexedDB); Pages only serves the
-# static files.
+# static files. The bundled map collection lives in the separate
+# fog-atlas-collection repo and is checked out into public/collection/
+# before the build (see also scripts/fetch-collection.mjs for local dev).
 name: Deploy to GitHub Pages
 
 on:
@@ -23,11 +25,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Thenoxius/fog-atlas-collection
+          path: fog-atlas-collection
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: mkdir -p public/collection && cp -r fog-atlas-collection/collection/. public/collection/
       - run: npm run build
       - uses: actions/configure-pages@v5
         with:

@@ -23,6 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 
-# DM's original map assets (2.4+ GB): stay local; the repo ships the
-# optimized copies in public/collection built by scripts/build-collection.mjs
-/assets/
+# The bundled map collection now lives in a separate repo
+# (github.com/Thenoxius/fog-atlas-collection) and is fetched into
+# public/collection/ by scripts/fetch-collection.mjs — never tracked here.
+/public/collection/

@@ -8,10 +8,11 @@ Thanks for considering it! Fog Atlas is a small, hand-rolled tool (Vite + React 
 git clone https://github.com/Thenoxius/fog-atlas.git
 cd fog-atlas
 npm install
+npm run collection:fetch   # optional — pulls in the bundled battle maps
 npm run dev      # http://localhost:5173
 ```
 
-No accounts, API keys, or backend to configure — everything runs and stores data in your browser.
+No accounts, API keys, or backend to configure — everything runs and stores data in your browser. `collection:fetch` is optional: skip it and the app runs fine, just with an empty Map Collection modal (everything else — fog, grid, labels, tokens, notes, initiative — works the same either way).
 
 Before opening a PR:
 
@@ -42,4 +43,4 @@ Open an issue — there are templates for bug reports and map-collection request
 
 ## Adding to the bundled map collection
 
-If you're a cartographer and want your maps included (or want existing credits corrected), please open an issue rather than a PR — there are licensing questions to sort out first. See the [Credits](README.md#credits) section of the README for the current state of that.
+The map images live in a separate repo, [fog-atlas-collection](https://github.com/Thenoxius/fog-atlas-collection), not here. If you're a cartographer and want your maps included (or want existing credits corrected), please open an issue rather than a PR — there are licensing questions to sort out first. See the [Credits](README.md#credits) section of the README for the current state of that.

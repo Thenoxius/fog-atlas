@@ -79,6 +79,7 @@ The same list is available in-app via the **Map credits** link in the library fo
 
 ```bash
 npm install
+npm run collection:fetch  # optional — pulls the bundled map collection in (see below)
 npm run dev      # start at http://localhost:5173
 npm run build    # production build in dist/
 npm run preview  # serve the production build locally
@@ -90,19 +91,15 @@ Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for local s
 
 ### The bundled map collection
 
-The DM's original map files live in `assets/` (gitignored — several GB of full-resolution art doesn't fit GitHub or Pages). The repo ships web-optimized copies instead, generated into `public/collection/` (max 3000px WebP + thumbnails + `manifest.json`) by:
+The map images that ship in the Map Collection modal live in a separate repo, [fog-atlas-collection](https://github.com/Thenoxius/fog-atlas-collection), not in this one — this keeps this repo's clone small and lets the collection be updated independently of app releases.
 
-```bash
-node scripts/build-collection.mjs
-```
-
-Re-run it after adding maps to `assets/Battlemaps/<Series>/`; the script is incremental and parses grid dimensions and pixels-per-square from the filenames.
-
-`scripts/scan-metadata.mjs` is a one-off helper that scans `assets/` for embedded EXIF/IPTC/XMP author or copyright fields, in case source files ever carry creator attribution worth surfacing in the [Credits](#credits) modal.
+- `npm run collection:fetch` pulls the latest `collection/` folder from that repo into `public/collection/` for local dev. It's optional: without it, the app still runs fine, just with an empty Map Collection.
+- The GitHub Actions deploy workflow does the same automatically before every build.
+- To add, update, or regenerate maps (including the original-asset pipeline and the EXIF/IPTC metadata scanner), see that repo's own README.
 
 ## License
 
-The Fog Atlas source code is [MIT licensed](LICENSE). The bundled battle maps under `public/collection/` are the work of other artists and are **not** covered by that license — see [Credits](#credits).
+The Fog Atlas source code is [MIT licensed](LICENSE). The bundled battle maps (fetched from the separate [fog-atlas-collection](https://github.com/Thenoxius/fog-atlas-collection) repo into `public/collection/`) are the work of other artists and are **not** covered by that license — see [Credits](#credits).
 
 ## Keyboard shortcuts
 

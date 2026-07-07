@@ -23,6 +23,6 @@ SOFTWARE.
 ---
 
 This license covers the Fog Atlas source code only. It does not apply to the
-battle map images bundled under `public/collection/`, which remain the work
-of their original creators under their own terms — see the "Credits" section
-of README.md.
+battle map images fetched from the separate fog-atlas-collection repo into
+public/collection/, which remain the work of their original creators under
+their own terms — see the "Credits" section of README.md.
