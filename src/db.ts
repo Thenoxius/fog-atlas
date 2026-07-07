@@ -66,6 +66,19 @@ export interface Encounter {
 
 export const ACTIVE_ENCOUNTER_ID = 'active';
 
+/** A reusable roster entry — a player character or an enemy type — that can
+ * be added into the initiative tracker instead of typing a name by hand.
+ * Global to the app, like the encounter itself (not tied to one campaign). */
+export interface Character {
+  id: string;
+  name: string;
+  kind: 'pc' | 'enemy';
+  /** Square portrait image; null shows a generic placeholder. */
+  portrait: Blob | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface MapRecord {
   id: string;
   name: string;
@@ -103,9 +116,10 @@ export interface MapRecord {
 }
 
 const DB_NAME = 'fog-atlas';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE = 'maps';
 const ENCOUNTER_STORE = 'initiative';
+const CHARACTER_STORE = 'characters';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -120,6 +134,9 @@ function openDb(): Promise<IDBDatabase> {
         }
         if (!db.objectStoreNames.contains(ENCOUNTER_STORE)) {
           db.createObjectStore(ENCOUNTER_STORE, { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains(CHARACTER_STORE)) {
+          db.createObjectStore(CHARACTER_STORE, { keyPath: 'id' });
         }
       };
       req.onsuccess = () => resolve(req.result);
@@ -256,4 +273,32 @@ export async function getEncounter(): Promise<Encounter | undefined> {
 
 export async function saveEncounter(encounter: Encounter): Promise<void> {
   await withStore('readwrite', (s) => s.put(encounter), ENCOUNTER_STORE);
+}
+
+export async function listCharacters(): Promise<Character[]> {
+  const characters = await withStore(
+    'readonly',
+    (s) => s.getAll() as IDBRequest<Character[]>,
+    CHARACTER_STORE
+  );
+  return characters.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function addCharacter(character: Character): Promise<void> {
+  await withStore('readwrite', (s) => s.add(character), CHARACTER_STORE);
+}
+
+export async function updateCharacter(id: string, patch: Partial<Character>): Promise<void> {
+  const record = await withStore(
+    'readonly',
+    (s) => s.get(id) as IDBRequest<Character | undefined>,
+    CHARACTER_STORE
+  );
+  if (!record) throw new Error('Character not found');
+  Object.assign(record, patch, { updatedAt: Date.now() });
+  await withStore('readwrite', (s) => s.put(record), CHARACTER_STORE);
+}
+
+export async function deleteCharacter(id: string): Promise<void> {
+  await withStore('readwrite', (s) => s.delete(id), CHARACTER_STORE);
 }

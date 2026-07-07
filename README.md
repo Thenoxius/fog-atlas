@@ -45,6 +45,7 @@ Opens at `http://localhost:5173`. No accounts, no API keys, no backend to config
 - **Rectangle reveal** — drag a shape to reveal or fog a whole room at once, instead of only brushing it in.
 - **Initiative tracker** — add combatants, auto-sorted by initiative, with a synced turn-order bar on the player screen.
 - **DM notes** — pin private notes anywhere on the map for your own reference; they never sync to the player screen, not even hidden under fog.
+- **Character roster** — a reusable library of player characters and enemy types with portraits, managed from the **Characters** button in the library (initiative tracker integration is coming next).
 - **100% local** — everything lives in your browser's storage; works offline.
 
 ## How it works

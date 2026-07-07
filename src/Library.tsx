@@ -3,7 +3,8 @@ import { addMap, deleteMap, getSceneMaps, listMaps, renameMap, renameScene, type
 import { buildRecordFromFile } from './mapImport';
 import { MapPicker } from './MapPicker';
 import { Credits } from './Credits';
-import { IconAward, IconCoffee, IconCollection, IconEdit, IconLayers, IconMap, IconTrash, IconUpload } from './icons';
+import { CharacterLibrary } from './CharacterLibrary';
+import { IconAward, IconCoffee, IconCollection, IconEdit, IconLayers, IconMap, IconTrash, IconUpload, IconUsers } from './icons';
 
 const KOFI_URL = 'https://ko-fi.com/thenoxius';
 const WELCOME_SEEN_KEY = 'fog-atlas-welcome-seen';
@@ -59,6 +60,7 @@ export function Library({ onOpenMap }: LibraryProps) {
   const [confirmDelete, setConfirmDelete] = useState<{ kind: 'map' | 'scene'; id: string } | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [creditsOpen, setCreditsOpen] = useState(false);
+  const [charactersOpen, setCharactersOpen] = useState(false);
   const [welcomeOpen, setWelcomeOpen] = useState(() => !localStorage.getItem(WELCOME_SEEN_KEY));
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -175,6 +177,10 @@ export function Library({ onOpenMap }: LibraryProps) {
           <button className="btn btn-secondary" onClick={() => setPickerOpen(true)} title="Browse the maps that ship with Fog Atlas">
             <IconCollection />
             Map collection
+          </button>
+          <button className="btn btn-secondary" onClick={() => setCharactersOpen(true)} title="Manage your roster of player characters and enemies">
+            <IconUsers />
+            Characters
           </button>
           <button className="btn btn-primary" onClick={() => fileInputRef.current?.click()}>
             <IconUpload />
@@ -358,6 +364,8 @@ export function Library({ onOpenMap }: LibraryProps) {
       )}
 
       {creditsOpen && <Credits onClose={() => setCreditsOpen(false)} />}
+
+      {charactersOpen && <CharacterLibrary onClose={() => setCharactersOpen(false)} />}
 
       {pickerOpen && (
         <MapPicker

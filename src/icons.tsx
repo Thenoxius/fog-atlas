@@ -202,6 +202,27 @@ export function IconFlipVertical({ size = 18 }: IconProps) {
   );
 }
 
+export function IconUsers({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  );
+}
+
+export function IconPortrait({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <rect x="4" y="3" width="16" height="18" rx="2" />
+      <circle cx="12" cy="10" r="3" />
+      <path d="M6 19c1-3 3.5-4 6-4s5 1 6 4" />
+    </svg>
+  );
+}
+
 export function IconNote({ size = 18 }: IconProps) {
   return (
     <svg {...base(size)}>
