@@ -78,6 +78,7 @@ Fog Atlas runs two screens: your **DM screen** and a **player screen** on a seco
 - Your DM screen shows the fog **semi-transparent** (adjust with the *DM fog* slider) so you can see what lies underneath and decide what to reveal.
 - As you reveal or re-cover fog on your screen, the player screen updates **live**. Switching maps in a scene switches the player screen too.
 - Slide your mouse onto the player window to **pan (drag), zoom (scroll), and point**: a glowing highlight ring follows the cursor so you can call attention to a spot on the board. A *fit* button re-frames the whole map.
+- If the TV lies flat as the table itself, with players on both sides: the player window's toolbar can duplicate the initiative bar at the bottom of the screen and flip either copy 180° independently, so each side reads it right-side up. These are per-device display preferences (remembered on that TV/browser), not synced from the DM screen.
 
 Both windows run entirely on your machine and communicate directly in the browser — nothing is sent over a network.
 

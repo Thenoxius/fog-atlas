@@ -190,6 +190,18 @@ export function IconInitiative({ size = 18 }: IconProps) {
   );
 }
 
+export function IconFlipVertical({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M12 3v4" />
+      <path d="m9 5 3-3 3 3" />
+      <path d="M12 17v4" />
+      <path d="m9 19 3 3 3-3" />
+      <path d="M4 12h16" />
+    </svg>
+  );
+}
+
 export function IconNote({ size = 18 }: IconProps) {
   return (
     <svg {...base(size)}>

@@ -5,7 +5,7 @@ import { drawLabels } from './labels';
 import { drawTokens } from './tokens';
 import { ensureMapFontsLoaded } from './fonts';
 import { openPresentChannel, type PresentMessage, type PublicInitiativeState } from './present';
-import { IconExitFullscreen, IconFit, IconFullscreen, IconMap } from './icons';
+import { IconExitFullscreen, IconFit, IconFlipVertical, IconFullscreen, IconLayers, IconMap } from './icons';
 
 // The player screen: a dedicated window the DM drags onto the TV / board.
 // It shows the active map with fully opaque black fog and the grid — no
@@ -27,6 +27,17 @@ const NO_GRID: GridConfig = {
 const MIN_SCALE = 0.05;
 const MAX_SCALE = 12;
 const HIGHLIGHT_RADIUS = 22;
+
+// Persisted per-device, not synced from the DM: a table-mounted TV keeps its
+// own physical orientation regardless of who's presenting, so these survive
+// reloads instead of resetting every time the DM opens the player screen.
+const STORAGE_SHOW_BOTTOM = 'fog-atlas-initiative-bottom';
+const STORAGE_FLIP_TOP = 'fog-atlas-initiative-flip-top';
+const STORAGE_FLIP_BOTTOM = 'fog-atlas-initiative-flip-bottom';
+
+function loadBoolPref(key: string): boolean {
+  return localStorage.getItem(key) === 'true';
+}
 
 interface ViewTransform {
   scale: number;
@@ -57,6 +68,35 @@ export function PlayerView() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [initiative, setInitiative] = useState<PublicInitiativeState | null>(null);
+
+  // Table-TV layout: mirror the turn order at the bottom of the screen too,
+  // and flip either copy upside down, so players on both sides of a
+  // flat-mounted TV can each read it right-side up from where they sit.
+  const [showBottomInitiative, setShowBottomInitiative] = useState(() => loadBoolPref(STORAGE_SHOW_BOTTOM));
+  const [flipTopInitiative, setFlipTopInitiative] = useState(() => loadBoolPref(STORAGE_FLIP_TOP));
+  const [flipBottomInitiative, setFlipBottomInitiative] = useState(() => loadBoolPref(STORAGE_FLIP_BOTTOM));
+
+  const toggleShowBottomInitiative = () => {
+    setShowBottomInitiative((v) => {
+      const next = !v;
+      localStorage.setItem(STORAGE_SHOW_BOTTOM, String(next));
+      return next;
+    });
+  };
+  const toggleFlipTopInitiative = () => {
+    setFlipTopInitiative((v) => {
+      const next = !v;
+      localStorage.setItem(STORAGE_FLIP_TOP, String(next));
+      return next;
+    });
+  };
+  const toggleFlipBottomInitiative = () => {
+    setFlipBottomInitiative((v) => {
+      const next = !v;
+      localStorage.setItem(STORAGE_FLIP_BOTTOM, String(next));
+      return next;
+    });
+  };
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -353,21 +393,32 @@ export function PlayerView() {
         onWheel={onWheel}
         onContextMenu={(e) => e.preventDefault()}
       />
-      {initiative && initiative.order.length > 0 && (
-        <div className="player-initiative-bar">
-          {initiative.round > 0 && <span className="player-initiative-round">Round {initiative.round}</span>}
-          <div className="player-initiative-order">
-            {initiative.order.map((c) => (
-              <span
-                key={c.id}
-                className={`player-initiative-chip ${c.id === initiative.currentTurnId ? 'player-initiative-chip-active' : ''} ${c.isEnemy ? 'player-initiative-chip-enemy' : ''}`}
+      {initiative && initiative.order.length > 0 && (() => {
+        const chips = initiative.order.map((c) => (
+          <span
+            key={c.id}
+            className={`player-initiative-chip ${c.id === initiative.currentTurnId ? 'player-initiative-chip-active' : ''} ${c.isEnemy ? 'player-initiative-chip-enemy' : ''}`}
+          >
+            {c.name}
+          </span>
+        ));
+        return (
+          <>
+            <div className={`player-initiative-bar ${flipTopInitiative ? 'player-initiative-bar-flipped' : ''}`}>
+              {initiative.round > 0 && <span className="player-initiative-round">Round {initiative.round}</span>}
+              <div className="player-initiative-order">{chips}</div>
+            </div>
+            {showBottomInitiative && (
+              <div
+                className={`player-initiative-bar player-initiative-bar-bottom ${flipBottomInitiative ? 'player-initiative-bar-flipped' : ''}`}
               >
-                {c.name}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
+                {initiative.round > 0 && <span className="player-initiative-round">Round {initiative.round}</span>}
+                <div className="player-initiative-order">{chips}</div>
+              </div>
+            )}
+          </>
+        );
+      })()}
       {waiting && (
         <div className="player-waiting">
           <span className="brand-icon welcome-icon"><IconMap size={26} /></span>
@@ -383,6 +434,37 @@ export function PlayerView() {
         <button className="player-fs-btn" onClick={toggleFullscreen} title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
           {isFullscreen ? <IconExitFullscreen /> : <IconFullscreen />}
         </button>
+        {initiative && initiative.order.length > 0 && (
+          <>
+            <button
+              className={`player-fs-btn ${showBottomInitiative ? 'player-fs-btn-active' : ''}`}
+              onClick={toggleShowBottomInitiative}
+              title={
+                showBottomInitiative
+                  ? 'Hide the duplicate initiative bar at the bottom'
+                  : 'Also show initiative at the bottom — for a table-mounted TV with players on both sides'
+              }
+            >
+              <IconLayers />
+            </button>
+            <button
+              className={`player-fs-btn ${flipTopInitiative ? 'player-fs-btn-active' : ''}`}
+              onClick={toggleFlipTopInitiative}
+              title="Flip the top initiative bar upside down, to read correctly from the far side of the table"
+            >
+              <IconFlipVertical />
+            </button>
+            {showBottomInitiative && (
+              <button
+                className={`player-fs-btn ${flipBottomInitiative ? 'player-fs-btn-active' : ''}`}
+                onClick={toggleFlipBottomInitiative}
+                title="Flip the bottom initiative bar upside down, to read correctly from the near side of the table"
+              >
+                <IconFlipVertical />
+              </button>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

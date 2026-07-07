@@ -1336,6 +1336,12 @@ kbd {
   border-color: var(--accent);
 }
 
+.player-fs-btn-active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, rgba(15, 18, 28, 0.75));
+}
+
 .player-initiative-bar {
   position: absolute;
   top: 16px;
@@ -1350,6 +1356,18 @@ kbd {
   border: 1px solid var(--border-strong);
   border-radius: 999px;
   backdrop-filter: blur(3px);
+}
+
+/* For a table-mounted TV: a second copy at the bottom for players sitting
+   on that side, and a 180° flip on either copy so its text reads correctly
+   from whichever side of the table is viewing it upside down otherwise. */
+.player-initiative-bar-bottom {
+  top: auto;
+  bottom: 16px;
+}
+
+.player-initiative-bar-flipped {
+  transform: translateX(-50%) rotate(180deg);
 }
 
 .player-initiative-round {
