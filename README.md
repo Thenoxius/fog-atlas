@@ -6,6 +6,33 @@ A fully local fog-of-war map tool for dungeon masters. Import your campaign maps
 
 > **Why this is safe for your table:** Fog Atlas has no backend, no account, and no analytics — there is nothing to sign up for and nothing being tracked. Your campaign maps, fog state, and DM notes are stored only in your own browser's local storage (IndexedDB) and are never uploaded anywhere. Open the page, do your prep, close the tab; it's still there next time, on this device only. You can even use it fully offline once it's loaded. If you ever want to double-check, the entire source is open — see [Development](#development) — and the [License](#license) section covers what that means for reuse.
 
+## Quick start
+
+**Just want to use it?** → **[thenoxius.github.io/fog-atlas](https://thenoxius.github.io/fog-atlas/)** — nothing to install, it runs entirely in your browser.
+
+**Want to run it locally?**
+
+```bash
+git clone https://github.com/Thenoxius/fog-atlas.git
+cd fog-atlas
+npm install
+npm run dev
+```
+
+Opens at `http://localhost:5173`. No accounts, no API keys, no backend to configure. That's the whole setup — the bundled map collection is optional and fetched separately; see [Development](#development) for that and the full command list (build, preview, lint).
+
+## Contents
+
+- [Features](#features)
+- [How it works](#how-it-works)
+- [The two-screen setup (laptop + TV)](#the-two-screen-setup-laptop--tv)
+- [Everything stays local](#everything-stays-local)
+- [Support](#support)
+- [Credits](#credits)
+- [Development](#development)
+- [License](#license)
+- [Keyboard shortcuts](#keyboard-shortcuts)
+
 ## Features
 
 - **Fog of war** you paint and erase with the mouse, autosaved per map and restored exactly when you reopen it.
@@ -83,6 +110,7 @@ npm run collection:fetch  # optional — pulls the bundled map collection in (se
 npm run dev      # start at http://localhost:5173
 npm run build    # production build in dist/
 npm run preview  # serve the production build locally
+npm run lint     # oxlint
 ```
 
 Built with Vite + React + TypeScript. No runtime dependencies beyond React; the canvas, fog compositing (`destination-out` erasing), and IndexedDB layer are hand-rolled.
