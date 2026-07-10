@@ -744,7 +744,9 @@ h1, h2, h3 {
 
 .character-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  /* Wide enough for a card's three-button action row (Party · Details ·
+     delete) to sit on one line. */
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
   gap: 12px;
 }
 
@@ -776,8 +778,6 @@ h1, h2, h3 {
   min-width: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
 }
 
 .character-name {
@@ -787,18 +787,17 @@ h1, h2, h3 {
   white-space: nowrap;
 }
 
-.character-confirm {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
+/* Actions sit on their own full-width row under the portrait + name, so up to
+   three buttons (Party, Details, delete) always have room instead of being
+   squeezed beside the name and spilling out of the card. */
+.character-confirm,
 .character-card-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
+  gap: 6px;
+  /* Never let a button spill out of the card on a narrow column — wrap to a
+     second line instead. */
+  flex-wrap: wrap;
 }
 
 .character-details-toggle {
@@ -1823,6 +1822,131 @@ kbd {
   white-space: nowrap;
 }
 
+.initiative-roster-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.initiative-roster-buttons .initiative-roster-btn {
+  flex: 1;
+}
+
+/* Shield marker on roster entries for party-flagged PCs. */
+.initiative-roster-party {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+}
+
+/* Party toggle on PC cards in the Characters roster. */
+.character-party-toggle-active {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* Saved encounters: prepped fights the DM can load with one click. */
+.initiative-saved-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.initiative-saved-row .initiative-roster-entry {
+  flex: 1;
+  justify-content: space-between;
+}
+
+.initiative-saved-count {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.initiative-saved-saverow {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+
+.initiative-saved-name-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Down/dead: greyed out, struck through, skipped by Next Turn. */
+.initiative-row-down {
+  opacity: 0.55;
+}
+
+.initiative-row-down .initiative-name-input {
+  text-decoration: line-through;
+}
+
+.initiative-row-down .initiative-toggle img {
+  filter: grayscale(1);
+}
+
+.initiative-down-btn-active {
+  color: var(--danger);
+  opacity: 1;
+}
+
+.initiative-row-down .initiative-down-btn-active {
+  /* Keep the skull readable on a greyed row so "back up" is easy to find. */
+  color: var(--danger);
+}
+
+.initiative-compact-item-down {
+  opacity: 0.5;
+}
+
+.initiative-compact-item-down .initiative-compact-portrait {
+  filter: grayscale(1);
+}
+
+.initiative-refcard-instance-down {
+  opacity: 0.55;
+}
+
+.initiative-refcard-instance-down .initiative-refcard-instname {
+  text-decoration: line-through;
+}
+
+/* Remaining-rounds counter inside an effect tag/badge. */
+.initiative-effect-rounds {
+  margin-left: 2px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--reveal) 25%, transparent);
+  font-size: 9.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.initiative-effect-addrow {
+  display: flex;
+  gap: 6px;
+}
+
+.initiative-effect-addrow .initiative-effect-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.initiative-effect-rounds-input {
+  flex: 0 0 64px;
+  text-align: center;
+}
+
 /* HP bar — the at-a-glance health readout on rows, reference cards, and the
    compact strip. Green above half, gold above a quarter, red below (set
    inline from hpColor). DM-only, like the HP numbers themselves. */
@@ -2222,4 +2346,15 @@ kbd {
   color: var(--accent-contrast);
   border-color: var(--danger);
   box-shadow: 0 0 14px color-mix(in srgb, var(--danger) 60%, transparent);
+}
+
+/* Downed/dead combatants: the fact is table-visible (players saw it drop),
+   so the chip greys out and strikes through. HP itself never reaches here. */
+.player-initiative-chip-down {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
+.player-initiative-chip-down .player-initiative-chip-portrait img {
+  filter: grayscale(1);
 }

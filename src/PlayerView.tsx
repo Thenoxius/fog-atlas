@@ -443,7 +443,7 @@ export function PlayerView() {
           return (
             <span
               key={c.id}
-              className={`player-initiative-chip ${c.id === initiative.currentTurnId ? 'player-initiative-chip-active' : ''} ${c.isEnemy ? 'player-initiative-chip-enemy' : ''}`}
+              className={`player-initiative-chip ${c.id === initiative.currentTurnId ? 'player-initiative-chip-active' : ''} ${c.isEnemy ? 'player-initiative-chip-enemy' : ''} ${c.down ? 'player-initiative-chip-down' : ''}`}
             >
               {portrait && (
                 <span className="player-initiative-chip-portrait">

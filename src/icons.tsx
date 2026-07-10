@@ -231,6 +231,25 @@ export function IconChevron({ size = 18 }: IconProps) {
   );
 }
 
+export function IconShield({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M12 22s8-3.5 8-10V5l-8-3-8 3v7c0 6.5 8 10 8 10z" />
+    </svg>
+  );
+}
+
+export function IconSkull({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M8 20v1a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-1a2 2 0 0 0 1.56-3.25 8 8 0 1 0-11.12 0A2 2 0 0 0 8 20Z" />
+      <circle cx="9" cy="12" r="1" />
+      <circle cx="15" cy="12" r="1" />
+      <path d="m12.5 17-.5-1-.5 1h1z" />
+    </svg>
+  );
+}
+
 export function IconChevronsRight({ size = 18 }: IconProps) {
   return (
     <svg {...base(size)}>

@@ -42,6 +42,15 @@ export interface MapNote {
   y: number;
 }
 
+/** An active condition on a combatant — DM-only, like HP. */
+export interface CombatantEffect {
+  name: string;
+  /** Remaining rounds. Counts down when the combatant's turn ends (so a
+   * 1-round effect is still visible while playing that turn) and the effect
+   * clears at 0. Absent = lasts until removed by hand. */
+  rounds?: number;
+}
+
 /** One combatant in the initiative tracker. HP is tracked for the DM's own
  * reference only — it never leaves the DM screen. isEnemy is the opposite:
  * it's meant for players to see, so it travels in PublicCombatant too. */
@@ -52,12 +61,17 @@ export interface Combatant {
   hpCurrent?: number;
   hpMax?: number;
   isEnemy?: boolean;
+  /** Downed/dead — greyed out and skipped by Next Turn. Table-visible
+   * reality (the players saw it drop), so it travels in PublicCombatant. */
+  down?: boolean;
   /** Links this combatant to a roster Character. Only the id travels to the
    * player screen — the portrait Blob is read there from the shared
    * 'characters' store, never streamed over the channel. */
   characterId?: string;
-  /** DM-only condition tags (Poisoned, Prone, …). Never sent to players. */
-  effects?: string[];
+  /** DM-only conditions (Poisoned, Prone, …), optionally with a remaining
+   * round count. Never sent to players. Encounters saved before durations
+   * existed stored plain strings — normalized on load in the tracker. */
+  effects?: CombatantEffect[];
 }
 
 /** The single active encounter, global to the app (not tied to a map), so
@@ -71,6 +85,28 @@ export interface Encounter {
 }
 
 export const ACTIVE_ENCOUNTER_ID = 'active';
+
+/** One line of a saved encounter template: who joins when it's loaded.
+ * Enemies store their base name and get re-numbered (#1, #2, …) against the
+ * live encounter at load time. */
+export interface SavedEncounterMember {
+  name: string;
+  isEnemy: boolean;
+  characterId?: string;
+  /** HP to prefill when the member has no roster stat block to read it from. */
+  hpMax?: number;
+}
+
+/** A prepped encounter ("Goblin ambush at the bridge") that can be loaded
+ * into the tracker with one click. A template, not a snapshot: initiative,
+ * current HP, and effects are not saved. */
+export interface SavedEncounter {
+  id: string;
+  name: string;
+  members: SavedEncounterMember[];
+  createdAt: number;
+  updatedAt: number;
+}
 
 /** DM-only stat block for a roster character. Every field is optional, so a
  * character can carry as much or as little detail as the DM cares to fill in.
@@ -100,6 +136,9 @@ export interface Character {
   portrait: Blob | null;
   /** Optional DM-only stat block (AC, HP, ability scores, notes). */
   stats?: CharacterStats;
+  /** PCs only: part of the active party, so the tracker's "Add party"
+   * button can seat the whole group with one click. */
+  inParty?: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -141,10 +180,11 @@ export interface MapRecord {
 }
 
 const DB_NAME = 'fog-atlas';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const STORE = 'maps';
 const ENCOUNTER_STORE = 'initiative';
 const CHARACTER_STORE = 'characters';
+const SAVED_ENCOUNTER_STORE = 'savedEncounters';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -162,6 +202,9 @@ function openDb(): Promise<IDBDatabase> {
         }
         if (!db.objectStoreNames.contains(CHARACTER_STORE)) {
           db.createObjectStore(CHARACTER_STORE, { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains(SAVED_ENCOUNTER_STORE)) {
+          db.createObjectStore(SAVED_ENCOUNTER_STORE, { keyPath: 'id' });
         }
       };
       req.onsuccess = () => resolve(req.result);
@@ -334,4 +377,21 @@ export async function updateCharacter(id: string, patch: Partial<Character>): Pr
 
 export async function deleteCharacter(id: string): Promise<void> {
   await withStore('readwrite', (s) => s.delete(id), CHARACTER_STORE);
+}
+
+export async function listSavedEncounters(): Promise<SavedEncounter[]> {
+  const encounters = await withStore(
+    'readonly',
+    (s) => s.getAll() as IDBRequest<SavedEncounter[]>,
+    SAVED_ENCOUNTER_STORE
+  );
+  return encounters.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function saveSavedEncounter(encounter: SavedEncounter): Promise<void> {
+  await withStore('readwrite', (s) => s.put(encounter), SAVED_ENCOUNTER_STORE);
+}
+
+export async function deleteSavedEncounter(id: string): Promise<void> {
+  await withStore('readwrite', (s) => s.delete(id), SAVED_ENCOUNTER_STORE);
 }

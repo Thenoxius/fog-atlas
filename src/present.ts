@@ -23,6 +23,9 @@ export interface PublicCombatant {
   id: string;
   name: string;
   isEnemy: boolean;
+  /** Downed/dead — table-visible reality (the players saw it drop), so the
+   * player screen greys the chip out. HP itself still never travels. */
+  down?: boolean;
   characterId?: string;
 }
 

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { addCharacter, deleteCharacter, listCharacters, updateCharacter, type Character, type CharacterStats } from './db';
 import { buildPortraitBlob } from './characterImport';
-import { IconChevron, IconClose, IconPortrait, IconTrash, IconUpload, IconUsers } from './icons';
+import { IconChevron, IconClose, IconPortrait, IconShield, IconTrash, IconUpload, IconUsers } from './icons';
 
 // Ability scores rendered as the six compact inputs in the details editor.
 type AbilityKey = 'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha';
@@ -184,30 +184,48 @@ export function CharacterLibrary({ onClose }: CharacterLibraryProps) {
                 {c.name}
               </h3>
             )}
-            {confirmDeleteId === c.id ? (
-              <div className="character-confirm">
-                <span className="confirm-label">Delete?</span>
-                <button className="btn btn-danger btn-sm" onClick={() => handleDelete(c.id)}>Yes</button>
-                <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDeleteId(null)}>Cancel</button>
-              </div>
-            ) : (
-              <div className="character-card-actions">
-                <button
-                  className={`btn btn-ghost btn-sm character-details-toggle ${detailsOpen ? 'character-details-toggle-open' : ''}`}
-                  onClick={() => setDetailsId(detailsOpen ? null : c.id)}
-                  title={detailsOpen ? 'Hide details' : 'Edit stats & details'}
-                  aria-expanded={detailsOpen}
-                >
-                  Details
-                  <IconChevron size={13} />
-                </button>
-                <button className="btn btn-ghost btn-sm character-delete" onClick={() => setConfirmDeleteId(c.id)} title="Delete">
-                  <IconTrash size={13} />
-                </button>
-              </div>
-            )}
           </div>
         </div>
+        {confirmDeleteId === c.id ? (
+          <div className="character-confirm">
+            <span className="confirm-label">Delete?</span>
+            <button className="btn btn-danger btn-sm" onClick={() => handleDelete(c.id)}>Yes</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDeleteId(null)}>Cancel</button>
+          </div>
+        ) : (
+          <div className="character-card-actions">
+            {c.kind === 'pc' && (
+              <button
+                className={`btn btn-ghost btn-sm character-party-toggle ${c.inParty ? 'character-party-toggle-active' : ''}`}
+                onClick={async () => {
+                  await updateCharacter(c.id, { inParty: !c.inParty });
+                  await refresh();
+                }}
+                title={
+                  c.inParty
+                    ? 'In the party — click to remove'
+                    : 'Add to the party — the initiative tracker seats the whole party with one click'
+                }
+                aria-pressed={!!c.inParty}
+              >
+                <IconShield size={13} />
+                Party
+              </button>
+            )}
+            <button
+              className={`btn btn-ghost btn-sm character-details-toggle ${detailsOpen ? 'character-details-toggle-open' : ''}`}
+              onClick={() => setDetailsId(detailsOpen ? null : c.id)}
+              title={detailsOpen ? 'Hide details' : 'Edit stats & details'}
+              aria-expanded={detailsOpen}
+            >
+              Details
+              <IconChevron size={13} />
+            </button>
+            <button className="btn btn-ghost btn-sm character-delete" onClick={() => setConfirmDeleteId(c.id)} title="Delete">
+              <IconTrash size={13} />
+            </button>
+          </div>
+        )}
         {detailsOpen && (
           <div className="character-details">
             <div className="character-details-row">

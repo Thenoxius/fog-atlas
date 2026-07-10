@@ -3,14 +3,21 @@ import {
   getEncounter,
   saveEncounter,
   listCharacters,
+  listSavedEncounters,
+  saveSavedEncounter,
+  deleteSavedEncounter,
   ACTIVE_ENCOUNTER_ID,
   type Character,
   type Combatant,
+  type CombatantEffect,
   type Encounter,
+  type SavedEncounter,
+  type SavedEncounterMember,
 } from './db';
 import type { PublicInitiativeState } from './present';
 import {
-  IconChevron, IconChevronsLeft, IconChevronsRight, IconClose, IconInitiative, IconPortrait, IconTrash, IconUsers,
+  IconChevron, IconChevronsLeft, IconChevronsRight, IconClose, IconCollection, IconInitiative, IconPortrait,
+  IconShield, IconSkull, IconTrash, IconUsers,
 } from './icons';
 
 const SAVE_DEBOUNCE = 500;
@@ -49,16 +56,30 @@ function sortByInitiative(combatants: Combatant[]): Combatant[] {
   return [...combatants].sort((a, b) => b.initiative - a.initiative);
 }
 
+/** Encounters saved before effect durations existed stored effects as plain
+ * strings — lift those into { name } objects on load. */
+function normalizeEncounter(e: Encounter): Encounter {
+  return {
+    ...e,
+    combatants: e.combatants.map((c) => ({
+      ...c,
+      effects: c.effects?.map((x: CombatantEffect | string) => (typeof x === 'string' ? { name: x } : x)),
+    })),
+  };
+}
+
 function toPublic(encounter: Encounter): PublicInitiativeState {
   return {
     round: encounter.round,
     currentTurnId: encounter.currentTurnId,
-    // Only id/name/isEnemy/characterId travel — never HP, stats, or effects,
-    // and never the portrait Blob (the player window reads that from IndexedDB).
+    // Only id/name/isEnemy/down/characterId travel — never HP, stats, or
+    // effects, and never the portrait Blob (the player window reads that
+    // from IndexedDB).
     order: sortByInitiative(encounter.combatants).map((c) => ({
       id: c.id,
       name: c.name,
       isEnemy: !!c.isEnemy,
+      down: c.down ? true : undefined,
       characterId: c.characterId,
     })),
   };
@@ -193,6 +214,11 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
   const [characters, setCharacters] = useState<Character[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [customEffect, setCustomEffect] = useState('');
+  const [effectRounds, setEffectRounds] = useState('');
+  const [encountersOpen, setEncountersOpen] = useState(false);
+  const [savedEncounters, setSavedEncounters] = useState<SavedEncounter[]>([]);
+  const [saveName, setSaveName] = useState('');
+  const [confirmDeleteSavedId, setConfirmDeleteSavedId] = useState<string | null>(null);
   const [compact, setCompact] = useState(() => loadPref(PREF_COMPACT, false));
   const [showReference, setShowReference] = useState(() => loadPref(PREF_REFERENCE, true));
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -219,7 +245,7 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
     getEncounter()
       .then((loaded) => {
         if (cancelled) return;
-        const e = loaded ?? EMPTY_ENCOUNTER;
+        const e = loaded ? normalizeEncounter(loaded) : EMPTY_ENCOUNTER;
         setEncounter(e);
         onBroadcast(toPublic(e));
       })
@@ -335,6 +361,100 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
       if (!v) listCharacters().then(setCharacters).catch(console.error);
       return !v;
     });
+    setEncountersOpen(false);
+  };
+
+  const openEncounters = () => {
+    setEncountersOpen((v) => {
+      if (!v) listSavedEncounters().then(setSavedEncounters).catch(console.error);
+      return !v;
+    });
+    setRosterOpen(false);
+  };
+
+  const handleSaveEncounter = async () => {
+    const name = saveName.trim();
+    if (!name || encounter.combatants.length === 0) return;
+    // A template, not a snapshot: enemies keep only their base name (the #N
+    // is re-derived on load), and initiative/current HP/effects are dropped.
+    const members: SavedEncounterMember[] = sorted.map((c) => {
+      const m: SavedEncounterMember = {
+        name: c.isEnemy ? c.name.replace(/ #\d+$/, '') : c.name,
+        isEnemy: !!c.isEnemy,
+      };
+      if (c.characterId) m.characterId = c.characterId;
+      if (c.hpMax != null) m.hpMax = c.hpMax;
+      return m;
+    });
+    const now = Date.now();
+    try {
+      await saveSavedEncounter({ id: crypto.randomUUID(), name, members, createdAt: now, updatedAt: now });
+      setSaveName('');
+      setSavedEncounters(await listSavedEncounters());
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleLoadEncounter = (se: SavedEncounter) => {
+    const working = [...encounter.combatants];
+    for (const m of se.members) {
+      // PCs dedupe by name so loading an ambush doesn't double the party
+      // that's already seated; enemies always add, freshly numbered.
+      if (!m.isEnemy && working.some((c) => c.name === m.name)) continue;
+      const combatant: Combatant = {
+        id: crypto.randomUUID(),
+        name: m.isEnemy ? nextEnemyName(m.name, working) : m.name,
+        initiative: 0,
+      };
+      if (m.isEnemy) combatant.isEnemy = true;
+      if (m.characterId) combatant.characterId = m.characterId;
+      const hpMax = (m.characterId ? characterMap.get(m.characterId)?.stats?.hpMax : undefined) ?? m.hpMax;
+      if (hpMax != null) {
+        combatant.hpMax = hpMax;
+        combatant.hpCurrent = hpMax;
+      }
+      working.push(combatant);
+    }
+    commit({ ...encounter, combatants: working });
+    setEncountersOpen(false);
+  };
+
+  const handleDeleteSaved = async (id: string) => {
+    try {
+      await deleteSavedEncounter(id);
+      setConfirmDeleteSavedId(null);
+      setSavedEncounters(await listSavedEncounters());
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  /** Seat every party-flagged PC at once (dedupe by name, so pressing it
+   * twice — or after loading a saved encounter — never doubles the party).
+   * Re-reads the roster first in case party flags changed in another tab. */
+  const handleAddParty = async () => {
+    let roster = characters;
+    try {
+      roster = await listCharacters();
+      setCharacters(roster);
+    } catch (err) {
+      console.error(err);
+    }
+    const party = roster.filter((c) => c.kind === 'pc' && c.inParty);
+    const working = [...encounter.combatants];
+    for (const ch of party) {
+      if (working.some((c) => c.name === ch.name)) continue;
+      const combatant: Combatant = { id: crypto.randomUUID(), name: ch.name, initiative: 0, characterId: ch.id };
+      if (ch.stats?.hpMax != null) {
+        combatant.hpMax = ch.stats.hpMax;
+        combatant.hpCurrent = ch.stats.hpMax;
+      }
+      working.push(combatant);
+    }
+    if (working.length !== encounter.combatants.length) {
+      commit({ ...encounter, combatants: working });
+    }
   };
 
   const patchCombatant = (id: string, patch: Partial<Combatant>) => {
@@ -344,25 +464,27 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
     });
   };
 
-  const setEffects = (id: string, effects: string[]) => {
+  const setEffects = (id: string, effects: CombatantEffect[]) => {
     patchCombatant(id, { effects: effects.length ? effects : undefined });
   };
 
-  const addEffect = (c: Combatant, effect: string) => {
-    const trimmed = effect.trim();
+  const addEffect = (c: Combatant, name: string) => {
+    const trimmed = name.trim();
     if (!trimmed) return;
     const current = c.effects ?? [];
-    if (current.includes(trimmed)) return;
-    setEffects(c.id, [...current, trimmed]);
+    if (current.some((e) => e.name === trimmed)) return;
+    const rounds = effectRounds.trim() === '' ? undefined : Math.max(1, Math.round(Number(effectRounds)) || 1);
+    setEffects(c.id, [...current, rounds != null ? { name: trimmed, rounds } : { name: trimmed }]);
   };
 
-  const removeEffect = (c: Combatant, effect: string) => {
-    setEffects(c.id, (c.effects ?? []).filter((e) => e !== effect));
+  const removeEffect = (c: Combatant, name: string) => {
+    setEffects(c.id, (c.effects ?? []).filter((e) => e.name !== name));
   };
 
   const toggleExpand = (id: string) => {
     setExpandedId((cur) => (cur === id ? null : id));
     setCustomEffect('');
+    setEffectRounds('');
   };
 
   const toggleCompact = () => {
@@ -380,17 +502,41 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
   };
 
   const handleNextTurn = () => {
-    if (sorted.length === 0) return;
-    if (!encounter.currentTurnId) {
-      commit({ ...encounter, currentTurnId: sorted[0].id, round: Math.max(1, encounter.round) });
-      return;
+    const alive = sorted.filter((c) => !c.down);
+    if (alive.length === 0) return;
+
+    // Find the next combatant that isn't down; wrapping past the top of the
+    // order starts a new round.
+    const idx = encounter.currentTurnId ? sorted.findIndex((c) => c.id === encounter.currentTurnId) : -1;
+    let nextId: string;
+    let wrapped = false;
+    if (idx === -1) {
+      nextId = alive[0].id;
+    } else {
+      let step = 1;
+      while (sorted[(idx + step) % sorted.length].down) step++;
+      nextId = sorted[(idx + step) % sorted.length].id;
+      wrapped = idx + step >= sorted.length;
     }
-    const idx = sorted.findIndex((c) => c.id === encounter.currentTurnId);
-    const nextIdx = idx === -1 ? 0 : (idx + 1) % sorted.length;
-    const wrapped = idx !== -1 && nextIdx === 0;
+
+    // The turn that just ended ticks its timed effects down; expired ones
+    // clear. (End-of-turn, so a 1-round effect stays visible while that
+    // combatant's turn is being played.)
+    const endingId = encounter.currentTurnId;
+    const combatants = endingId
+      ? encounter.combatants.map((c) => {
+          if (c.id !== endingId || !c.effects) return c;
+          const ticked = c.effects
+            .map((e) => (e.rounds != null ? { ...e, rounds: e.rounds - 1 } : e))
+            .filter((e) => e.rounds == null || e.rounds > 0);
+          return { ...c, effects: ticked.length ? ticked : undefined };
+        })
+      : encounter.combatants;
+
     commit({
       ...encounter,
-      currentTurnId: sorted[nextIdx].id,
+      combatants,
+      currentTurnId: nextId,
       round: wrapped ? encounter.round + 1 : Math.max(1, encounter.round),
     });
   };
@@ -437,7 +583,7 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
               {instances.map((i) => (
                 <div
                   key={i.id}
-                  className={`initiative-refcard-instance ${i.id === encounter.currentTurnId ? 'initiative-refcard-instance-active' : ''}`}
+                  className={`initiative-refcard-instance ${i.id === encounter.currentTurnId ? 'initiative-refcard-instance-active' : ''} ${i.down ? 'initiative-refcard-instance-down' : ''}`}
                 >
                   <span className="initiative-refcard-instname">{i.name}</span>
                   <HpBar combatant={i} />
@@ -476,8 +622,8 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
               return (
                 <button
                   key={c.id}
-                  className={`initiative-compact-item ${c.id === encounter.currentTurnId ? 'initiative-compact-item-active' : ''} ${c.isEnemy ? 'initiative-compact-item-enemy' : ''}`}
-                  title={`${c.name}${c.hpMax != null ? ` — ${c.hpCurrent ?? c.hpMax}/${c.hpMax} HP` : ''}`}
+                  className={`initiative-compact-item ${c.id === encounter.currentTurnId ? 'initiative-compact-item-active' : ''} ${c.isEnemy ? 'initiative-compact-item-enemy' : ''} ${c.down ? 'initiative-compact-item-down' : ''}`}
+                  title={`${c.name}${c.hpMax != null ? ` — ${c.hpCurrent ?? c.hpMax}/${c.hpMax} HP` : ''}${c.down ? ' — down' : ''}`}
                   onClick={() => {
                     setCompact(false);
                     savePref(PREF_COMPACT, false);
@@ -554,7 +700,7 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
             return (
               <div
                 key={c.id}
-                className={`initiative-row ${c.id === encounter.currentTurnId ? 'initiative-row-active' : ''} ${c.isEnemy ? 'initiative-row-enemy' : ''} ${expanded ? 'initiative-row-expanded' : ''}`}
+                className={`initiative-row ${c.id === encounter.currentTurnId ? 'initiative-row-active' : ''} ${c.isEnemy ? 'initiative-row-enemy' : ''} ${expanded ? 'initiative-row-expanded' : ''} ${c.down ? 'initiative-row-down' : ''}`}
               >
                 <div className="initiative-row-main">
                   <button
@@ -622,6 +768,13 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
                     />
                   </div>
                   <button
+                    className={`btn btn-ghost btn-sm initiative-down-btn ${c.down ? 'initiative-down-btn-active' : ''}`}
+                    onClick={() => patchCombatant(c.id, { down: c.down ? undefined : true })}
+                    title={c.down ? 'Back up — rejoins the turn order' : 'Mark down/dead — greyed out and skipped by Next Turn'}
+                  >
+                    <IconSkull size={14} />
+                  </button>
+                  <button
                     className="btn btn-ghost btn-sm"
                     onClick={() => commit({ ...encounter, combatants: encounter.combatants.filter((x) => x.id !== c.id) })}
                     title="Remove"
@@ -635,8 +788,9 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
                 {effects.length > 0 && (
                   <div className="initiative-row-effects" title="Active effects (DM only)">
                     {effects.map((e) => (
-                      <span key={e} className="initiative-effect-tag">
-                        {e}
+                      <span key={e.name} className="initiative-effect-tag">
+                        {e.name}
+                        {e.rounds != null && <span className="initiative-effect-rounds">{e.rounds}</span>}
                       </span>
                     ))}
                   </div>
@@ -652,12 +806,13 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
                         ) : (
                           effects.map((e) => (
                             <button
-                              key={e}
+                              key={e.name}
                               className="initiative-effect-badge"
-                              onClick={() => removeEffect(c, e)}
-                              title="Remove effect"
+                              onClick={() => removeEffect(c, e.name)}
+                              title={e.rounds != null ? `${e.rounds} round${e.rounds === 1 ? '' : 's'} left — click to remove` : 'Remove effect'}
                             >
-                              {e}
+                              {e.name}
+                              {e.rounds != null && <span className="initiative-effect-rounds">{e.rounds}</span>}
                               <IconClose size={11} />
                             </button>
                           ))
@@ -665,7 +820,7 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
                       </div>
                       <div className="initiative-effects-quick">
                         {COMMON_CONDITIONS.map((cond) => {
-                          const active = effects.includes(cond);
+                          const active = effects.some((e) => e.name === cond);
                           return (
                             <button
                               key={cond}
@@ -677,18 +832,29 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
                           );
                         })}
                       </div>
-                      <input
-                        className="initiative-effect-input"
-                        placeholder="Custom effect…"
-                        value={customEffect}
-                        onChange={(e) => setCustomEffect(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key !== 'Enter') return;
-                          e.preventDefault();
-                          addEffect(c, customEffect);
-                          setCustomEffect('');
-                        }}
-                      />
+                      <div className="initiative-effect-addrow">
+                        <input
+                          className="initiative-effect-input"
+                          placeholder="Custom effect…"
+                          value={customEffect}
+                          onChange={(e) => setCustomEffect(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key !== 'Enter') return;
+                            e.preventDefault();
+                            addEffect(c, customEffect);
+                            setCustomEffect('');
+                          }}
+                        />
+                        <input
+                          type="number"
+                          min={1}
+                          className="initiative-effect-input initiative-effect-rounds-input"
+                          placeholder="rounds"
+                          title="Optional duration — applies to the next effect you add (quick-pick or custom) and counts down when this combatant's turn ends"
+                          value={effectRounds}
+                          onChange={(e) => setEffectRounds(e.target.value)}
+                        />
+                      </div>
                     </div>
                   </div>
                 )}
@@ -699,13 +865,36 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
       </div>
 
       <div className="initiative-roster">
-        <button
-          className={`btn btn-ghost btn-sm initiative-roster-btn ${rosterOpen ? 'initiative-roster-btn-open' : ''}`}
-          onClick={openRoster}
-        >
-          <IconUsers size={14} />
-          From roster
-        </button>
+        <div className="initiative-roster-buttons">
+          <button
+            className="btn btn-ghost btn-sm initiative-roster-btn"
+            onClick={handleAddParty}
+            disabled={!characters.some((c) => c.kind === 'pc' && c.inParty)}
+            title={
+              characters.some((c) => c.kind === 'pc' && c.inParty)
+                ? `Seat the party: ${characters.filter((c) => c.kind === 'pc' && c.inParty).map((c) => c.name).join(', ')} — PCs already in the tracker are skipped`
+                : 'No party yet — flag your PCs with the shield button in the Characters roster'
+            }
+          >
+            <IconShield size={14} />
+            Add party
+          </button>
+          <button
+            className={`btn btn-ghost btn-sm initiative-roster-btn ${rosterOpen ? 'initiative-roster-btn-open' : ''}`}
+            onClick={openRoster}
+          >
+            <IconUsers size={14} />
+            From roster
+          </button>
+          <button
+            className={`btn btn-ghost btn-sm initiative-roster-btn ${encountersOpen ? 'initiative-roster-btn-open' : ''}`}
+            onClick={openEncounters}
+            title="Prepped encounters — save the current fight or load one you built earlier"
+          >
+            <IconCollection size={14} />
+            Encounters
+          </button>
+        </div>
         {rosterOpen && (
           <div className="initiative-roster-picker">
             {characters.length === 0 ? (
@@ -724,6 +913,11 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
                         {portraitUrl(c.id) ? <img src={portraitUrl(c.id)!} alt="" /> : <IconPortrait size={15} />}
                       </span>
                       <span className="initiative-roster-name">{c.name}</span>
+                      {c.inParty && (
+                        <span className="initiative-roster-party" title="In the party">
+                          <IconShield size={12} />
+                        </span>
+                      )}
                     </button>
                   ))
                 )}
@@ -742,6 +936,66 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
                 )}
               </>
             )}
+          </div>
+        )}
+        {encountersOpen && (
+          <div className="initiative-roster-picker">
+            <div className="initiative-roster-group">Saved encounters</div>
+            {savedEncounters.length === 0 ? (
+              <p className="initiative-detail-hint initiative-roster-empty">
+                None yet — build a fight below, then save it here to load with one click at the session.
+              </p>
+            ) : (
+              savedEncounters.map((se) => (
+                <div key={se.id} className="initiative-saved-row">
+                  {confirmDeleteSavedId === se.id ? (
+                    <>
+                      <span className="confirm-label">Delete "{se.name}"?</span>
+                      <button className="btn btn-danger btn-sm" onClick={() => handleDeleteSaved(se.id)}>Yes</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDeleteSavedId(null)}>Cancel</button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        className="initiative-roster-entry"
+                        onClick={() => handleLoadEncounter(se)}
+                        title={`Add ${se.members.length} combatant${se.members.length === 1 ? '' : 's'} to the tracker (PCs already seated are skipped)`}
+                      >
+                        <span className="initiative-roster-name">{se.name}</span>
+                        <span className="initiative-saved-count">{se.members.length}</span>
+                      </button>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => setConfirmDeleteSavedId(se.id)}
+                        title="Delete this saved encounter"
+                      >
+                        <IconTrash size={13} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              ))
+            )}
+            <div className="initiative-saved-saverow">
+              <input
+                className="initiative-effect-input initiative-saved-name-input"
+                placeholder="Save current as…"
+                value={saveName}
+                onChange={(e) => setSaveName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter') return;
+                  e.preventDefault();
+                  handleSaveEncounter();
+                }}
+              />
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={handleSaveEncounter}
+                disabled={!saveName.trim() || encounter.combatants.length === 0}
+              >
+                Save
+              </button>
+            </div>
           </div>
         )}
       </div>
