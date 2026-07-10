@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "collection:fetch": "node scripts/fetch-collection.mjs"
+    "collection:fetch": "node scripts/fetch-collection.mjs",
+    "srd:fetch": "node scripts/fetch-srd-monsters.mjs"
   },
   "dependencies": {
     "@fontsource/cinzel": "^5.2.8",

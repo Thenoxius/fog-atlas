@@ -46,6 +46,7 @@ Opens at `http://localhost:5173`. No accounts, no API keys, no backend to config
 - **Initiative tracker** — add combatants by hand or from your roster, auto-sorted by initiative, with a synced turn-order bar on the player screen. Roster enemies auto-number (Goblin #1, #2…), rows show portraits and HP bars, conditions can count down in rounds, downed combatants are skipped, and whole fights can be saved as prepped encounters and loaded in one click.
 - **DM notes** — pin private notes anywhere on the map for your own reference; they never sync to the player screen, not even hidden under fog.
 - **Character roster** — a reusable library of player characters and enemy types with portraits and optional DM-only stat blocks (AC, HP, ability scores, freeform notes), managed from the **Characters** button in the library and loaded straight into the initiative tracker.
+- **Bundled SRD monsters** — all ~330 monster stat blocks from the D&D 5.1 System Reference Document, searchable from the Characters screen; one click copies a monster into your roster as a fully editable enemy (stats, traits, and actions prefilled).
 - **100% local** — everything lives in your browser's storage; works offline.
 
 ## How it works
@@ -104,6 +105,8 @@ The battle maps in the built-in collection are the work of several talented cart
 
 The same list is available in-app via the **Map credits** link in the library footer. If you're one of these artists (or represent them) and would like this credit changed, expanded, or linked to your page, please open an issue or reach out — happy to update it.
 
+The bundled monster stat blocks include material taken from the **System Reference Document 5.1 ("SRD 5.1")** by Wizards of the Coast LLC, available at [dnd.wizards.com/resources/systems-reference-document](https://dnd.wizards.com/resources/systems-reference-document). The SRD 5.1 is licensed under the [Creative Commons Attribution 4.0 International License](https://creativecommons.org/licenses/by/4.0/legalcode). The JSON is generated from the community-maintained [5e-bits/5e-database](https://github.com/5e-bits/5e-database) project.
+
 ## Development
 
 ```bash
@@ -127,9 +130,11 @@ The map images that ship in the Map Collection modal live in a separate repo, [f
 - The GitHub Actions deploy workflow does the same automatically before every build.
 - To add, update, or regenerate maps (including the original-asset pipeline and the EXIF/IPTC metadata scanner), see that repo's own README.
 
+The SRD monster stat blocks are different: `public/srd-monsters.json` (~400 KB of text) **is** tracked in this repo, so the SRD browser works out of the box and offline. `npm run srd:fetch` regenerates it from [5e-bits/5e-database](https://github.com/5e-bits/5e-database) if a refresh is ever needed.
+
 ## License
 
-The Fog Atlas source code is [MIT licensed](LICENSE). The bundled battle maps (fetched from the separate [fog-atlas-collection](https://github.com/Thenoxius/fog-atlas-collection) repo into `public/collection/`) are the work of other artists and are **not** covered by that license — see [Credits](#credits).
+The Fog Atlas source code is [MIT licensed](LICENSE). The bundled battle maps (fetched from the separate [fog-atlas-collection](https://github.com/Thenoxius/fog-atlas-collection) repo into `public/collection/`) are the work of other artists and are **not** covered by that license — see [Credits](#credits). The bundled SRD monster data (`public/srd-monsters.json`) is Wizards of the Coast SRD 5.1 content under CC-BY-4.0, also not MIT — see the attribution in [Credits](#credits).
 
 ## Keyboard shortcuts
 

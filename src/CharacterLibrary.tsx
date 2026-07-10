@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { addCharacter, deleteCharacter, listCharacters, updateCharacter, type Character, type CharacterStats } from './db';
 import { buildPortraitBlob } from './characterImport';
-import { IconChevron, IconClose, IconPortrait, IconShield, IconTrash, IconUpload, IconUsers } from './icons';
+import { loadSrdMonsters, SRD_ATTRIBUTION, type SrdMonster } from './srd';
+import { IconChevron, IconClose, IconCollection, IconPortrait, IconShield, IconTrash, IconUpload, IconUsers } from './icons';
 
 // Ability scores rendered as the six compact inputs in the details editor.
 type AbilityKey = 'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha';
@@ -37,6 +38,13 @@ export function CharacterLibrary({ onClose }: CharacterLibraryProps) {
   const [renameValue, setRenameValue] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [detailsId, setDetailsId] = useState<string | null>(null);
+
+  // Bundled SRD monster browser: adding one copies its stat block into the
+  // roster as a normal enemy character, editable like any other.
+  const [srdOpen, setSrdOpen] = useState(false);
+  const [srdMonsters, setSrdMonsters] = useState<SrdMonster[] | null>(null);
+  const [srdError, setSrdError] = useState('');
+  const [srdSearch, setSrdSearch] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
@@ -147,8 +155,53 @@ export function CharacterLibrary({ onClose }: CharacterLibraryProps) {
     return Number.isNaN(n) ? undefined : n;
   };
 
+  const toggleSrd = () => {
+    setSrdOpen((v) => !v);
+    setSrdError('');
+    if (!srdMonsters) {
+      loadSrdMonsters()
+        .then(setSrdMonsters)
+        .catch((err) => {
+          console.error(err);
+          setSrdError('Could not load the SRD monster list — are you offline on a first visit?');
+        });
+    }
+  };
+
+  const handleAddSrd = async (m: SrdMonster) => {
+    setError('');
+    try {
+      const now = Date.now();
+      await addCharacter({
+        id: crypto.randomUUID(),
+        name: m.name,
+        kind: 'enemy',
+        portrait: null,
+        stats: {
+          ac: m.ac,
+          hpMax: m.hp,
+          speed: m.speed,
+          str: m.str,
+          dex: m.dex,
+          con: m.con,
+          int: m.int,
+          wis: m.wis,
+          cha: m.cha,
+          notes: m.notes,
+        },
+        createdAt: now,
+        updatedAt: now,
+      });
+      await refresh();
+    } catch (err) {
+      console.error(err);
+      setError('Something went wrong while adding the monster.');
+    }
+  };
+
   const pcs = characters.filter((c) => c.kind === 'pc');
   const enemies = characters.filter((c) => c.kind === 'enemy');
+  const rosterNames = new Set(characters.map((c) => c.name));
 
   const renderCard = (c: Character) => {
     const url = portraitUrl(c);
@@ -286,14 +339,27 @@ export function CharacterLibrary({ onClose }: CharacterLibraryProps) {
           <div>
             <h2><IconUsers size={20} /> Characters</h2>
             <p className="collection-sub">
-              A reusable roster — add these into the Initiative Tracker instead of typing names by hand
+              {srdOpen
+                ? 'Bundled SRD 5.1 monsters — add one and edit it like any roster enemy'
+                : 'A reusable roster — add these into the Initiative Tracker instead of typing names by hand'}
             </p>
           </div>
-          <button className="btn btn-ghost" onClick={onClose} title="Close">
-            <IconClose />
-          </button>
+          <div className="character-header-actions">
+            <button
+              className={`btn btn-ghost ${srdOpen ? 'character-srd-btn-open' : ''}`}
+              onClick={toggleSrd}
+              title={srdOpen ? 'Back to your roster' : 'Browse the bundled SRD monster stat blocks'}
+            >
+              <IconCollection size={16} />
+              {srdOpen ? 'Back to roster' : 'SRD monsters'}
+            </button>
+            <button className="btn btn-ghost" onClick={onClose} title="Close">
+              <IconClose />
+            </button>
+          </div>
         </header>
 
+        {!srdOpen && (
         <div className="character-add-row">
           <button
             className="character-portrait character-portrait-new"
@@ -321,6 +387,7 @@ export function CharacterLibrary({ onClose }: CharacterLibraryProps) {
             Add
           </button>
         </div>
+        )}
 
         <input
           ref={fileInputRef}
@@ -347,6 +414,56 @@ export function CharacterLibrary({ onClose }: CharacterLibraryProps) {
 
         {error && <div className="upload-error">{error}</div>}
 
+        {srdOpen ? (
+          <div className="collection-grid-wrap">
+            <input
+              className="character-name-input srd-search"
+              placeholder={`Search ${srdMonsters ? srdMonsters.length : ''} monsters by name or type…`}
+              value={srdSearch}
+              autoFocus
+              onChange={(e) => setSrdSearch(e.target.value)}
+            />
+            {srdError ? (
+              <div className="upload-error">{srdError}</div>
+            ) : !srdMonsters ? (
+              <div className="empty-state">Loading…</div>
+            ) : (
+              (() => {
+                const q = srdSearch.trim().toLowerCase();
+                const filtered = q
+                  ? srdMonsters.filter((m) => m.name.toLowerCase().includes(q) || m.type.toLowerCase().includes(q))
+                  : srdMonsters;
+                return filtered.length === 0 ? (
+                  <p className="character-group-empty">No monsters match "{srdSearch}".</p>
+                ) : (
+                  <div className="srd-list">
+                    {filtered.map((m) => (
+                      <div key={m.name} className="srd-row">
+                        <div className="srd-row-main">
+                          <span className="srd-name">{m.name}</span>
+                          <span className="srd-meta">{m.type} · CR {m.cr}{m.hp != null ? ` · ${m.hp} HP` : ''}</span>
+                        </div>
+                        {rosterNames.has(m.name) && (
+                          <span className="srd-inroster" title="Already in your roster — adding again makes another copy">
+                            in roster
+                          </span>
+                        )}
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => handleAddSrd(m)}
+                          title="Add to your roster as an editable enemy"
+                        >
+                          Add
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()
+            )}
+            <p className="srd-attribution">{SRD_ATTRIBUTION}</p>
+          </div>
+        ) : (
         <div className="collection-grid-wrap">
           {loading ? (
             <div className="empty-state">Loading…</div>
@@ -374,6 +491,7 @@ export function CharacterLibrary({ onClose }: CharacterLibraryProps) {
             </>
           )}
         </div>
+        )}
       </div>
     </div>
   );
