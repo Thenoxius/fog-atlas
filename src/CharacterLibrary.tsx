@@ -1,7 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
-import { addCharacter, deleteCharacter, listCharacters, updateCharacter, type Character } from './db';
+import { addCharacter, deleteCharacter, listCharacters, updateCharacter, type Character, type CharacterStats } from './db';
 import { buildPortraitBlob } from './characterImport';
-import { IconClose, IconPortrait, IconTrash, IconUpload, IconUsers } from './icons';
+import { IconChevron, IconClose, IconPortrait, IconTrash, IconUpload, IconUsers } from './icons';
+
+// Ability scores rendered as the six compact inputs in the details editor.
+type AbilityKey = 'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha';
+const ABILITIES: [AbilityKey, string][] = [
+  ['str', 'STR'],
+  ['dex', 'DEX'],
+  ['con', 'CON'],
+  ['int', 'INT'],
+  ['wis', 'WIS'],
+  ['cha', 'CHA'],
+];
 
 interface CharacterLibraryProps {
   onClose: () => void;
@@ -25,6 +36,7 @@ export function CharacterLibrary({ onClose }: CharacterLibraryProps) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [detailsId, setDetailsId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
@@ -112,7 +124,27 @@ export function CharacterLibrary({ onClose }: CharacterLibraryProps) {
     await deleteCharacter(id);
     portraitUrls.current.delete(id);
     setConfirmDeleteId(null);
+    if (detailsId === id) setDetailsId(null);
     await refresh();
+  };
+
+  // Persist a stat-block edit. Updates local state immediately (so the input
+  // stays responsive) and writes through to IndexedDB; we avoid refresh() here
+  // so a keystroke doesn't trigger a re-sort/reload that would drop focus.
+  const updateStats = (c: Character, patch: Partial<CharacterStats>) => {
+    const nextStats: CharacterStats = { ...(c.stats ?? {}), ...patch };
+    setCharacters((prev) => prev.map((x) => (x.id === c.id ? { ...x, stats: nextStats } : x)));
+    updateCharacter(c.id, { stats: nextStats }).catch((err) => {
+      console.error(err);
+      setError('Something went wrong while saving stats.');
+    });
+  };
+
+  // Numeric fields store `undefined` when blank, otherwise a finite number.
+  const numFromInput = (value: string): number | undefined => {
+    if (value.trim() === '') return undefined;
+    const n = Number(value);
+    return Number.isNaN(n) ? undefined : n;
   };
 
   const pcs = characters.filter((c) => c.kind === 'pc');
@@ -120,48 +152,111 @@ export function CharacterLibrary({ onClose }: CharacterLibraryProps) {
 
   const renderCard = (c: Character) => {
     const url = portraitUrl(c);
+    const detailsOpen = detailsId === c.id;
     return (
-      <article key={c.id} className="character-card">
-        <button
-          className="character-portrait"
-          onClick={() => {
-            editingPortraitId.current = c.id;
-            editFileInputRef.current?.click();
-          }}
-          title="Click to change portrait"
-        >
-          {url ? <img src={url} alt={c.name} /> : <IconPortrait size={26} />}
-        </button>
-        <div className="character-card-body">
-          {renamingId === c.id ? (
-            <input
-              className="rename-input"
-              value={renameValue}
-              autoFocus
-              onChange={(e) => setRenameValue(e.target.value)}
-              onBlur={commitRename}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') commitRename();
-                if (e.key === 'Escape') setRenamingId(null);
-              }}
-            />
-          ) : (
-            <h3 className="character-name" onDoubleClick={() => startRename(c)} title={c.name}>
-              {c.name}
-            </h3>
-          )}
-          {confirmDeleteId === c.id ? (
-            <div className="character-confirm">
-              <span className="confirm-label">Delete?</span>
-              <button className="btn btn-danger btn-sm" onClick={() => handleDelete(c.id)}>Yes</button>
-              <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDeleteId(null)}>Cancel</button>
-            </div>
-          ) : (
-            <button className="btn btn-ghost btn-sm character-delete" onClick={() => setConfirmDeleteId(c.id)} title="Delete">
-              <IconTrash size={13} />
-            </button>
-          )}
+      <article key={c.id} className={`character-card ${detailsOpen ? 'character-card-open' : ''}`}>
+        <div className="character-card-top">
+          <button
+            className="character-portrait"
+            onClick={() => {
+              editingPortraitId.current = c.id;
+              editFileInputRef.current?.click();
+            }}
+            title="Click to change portrait"
+          >
+            {url ? <img src={url} alt={c.name} /> : <IconPortrait size={26} />}
+          </button>
+          <div className="character-card-body">
+            {renamingId === c.id ? (
+              <input
+                className="rename-input"
+                value={renameValue}
+                autoFocus
+                onChange={(e) => setRenameValue(e.target.value)}
+                onBlur={commitRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitRename();
+                  if (e.key === 'Escape') setRenamingId(null);
+                }}
+              />
+            ) : (
+              <h3 className="character-name" onDoubleClick={() => startRename(c)} title={c.name}>
+                {c.name}
+              </h3>
+            )}
+            {confirmDeleteId === c.id ? (
+              <div className="character-confirm">
+                <span className="confirm-label">Delete?</span>
+                <button className="btn btn-danger btn-sm" onClick={() => handleDelete(c.id)}>Yes</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDeleteId(null)}>Cancel</button>
+              </div>
+            ) : (
+              <div className="character-card-actions">
+                <button
+                  className={`btn btn-ghost btn-sm character-details-toggle ${detailsOpen ? 'character-details-toggle-open' : ''}`}
+                  onClick={() => setDetailsId(detailsOpen ? null : c.id)}
+                  title={detailsOpen ? 'Hide details' : 'Edit stats & details'}
+                  aria-expanded={detailsOpen}
+                >
+                  Details
+                  <IconChevron size={13} />
+                </button>
+                <button className="btn btn-ghost btn-sm character-delete" onClick={() => setConfirmDeleteId(c.id)} title="Delete">
+                  <IconTrash size={13} />
+                </button>
+              </div>
+            )}
+          </div>
         </div>
+        {detailsOpen && (
+          <div className="character-details">
+            <div className="character-details-row">
+              <label className="character-field">
+                <span>AC</span>
+                <input
+                  type="number"
+                  value={c.stats?.ac ?? ''}
+                  onChange={(e) => updateStats(c, { ac: numFromInput(e.target.value) })}
+                />
+              </label>
+              <label className="character-field">
+                <span>HP</span>
+                <input
+                  type="number"
+                  value={c.stats?.hpMax ?? ''}
+                  onChange={(e) => updateStats(c, { hpMax: numFromInput(e.target.value) })}
+                />
+              </label>
+              <label className="character-field character-field-speed">
+                <span>Speed</span>
+                <input
+                  type="text"
+                  value={c.stats?.speed ?? ''}
+                  placeholder="30 ft."
+                  onChange={(e) => updateStats(c, { speed: e.target.value || undefined })}
+                />
+              </label>
+            </div>
+            <div className="character-abilities">
+              {ABILITIES.map(([key, label]) => (
+                <label key={key} className="character-ability-field">
+                  <span>{label}</span>
+                  <input
+                    type="number"
+                    value={c.stats?.[key] ?? ''}
+                    onChange={(e) => updateStats(c, { [key]: numFromInput(e.target.value) })}
+                  />
+                </label>
+              ))}
+            </div>
+            <textarea
+              className="character-notes"
+              placeholder="Attacks, traits, abilities, resistances…"
+              value={c.stats?.notes ?? ''}
+              onChange={(e) => updateStats(c, { notes: e.target.value || undefined })}
+            />
+          </div>
+        )}
       </article>
     );
   };

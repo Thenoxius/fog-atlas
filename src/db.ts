@@ -52,6 +52,12 @@ export interface Combatant {
   hpCurrent?: number;
   hpMax?: number;
   isEnemy?: boolean;
+  /** Links this combatant to a roster Character. Only the id travels to the
+   * player screen — the portrait Blob is read there from the shared
+   * 'characters' store, never streamed over the channel. */
+  characterId?: string;
+  /** DM-only condition tags (Poisoned, Prone, …). Never sent to players. */
+  effects?: string[];
 }
 
 /** The single active encounter, global to the app (not tied to a map), so
@@ -66,6 +72,23 @@ export interface Encounter {
 
 export const ACTIVE_ENCOUNTER_ID = 'active';
 
+/** DM-only stat block for a roster character. Every field is optional, so a
+ * character can carry as much or as little detail as the DM cares to fill in.
+ * These never leave the DM screen — they are for the tracker's detail card. */
+export interface CharacterStats {
+  ac?: number;
+  hpMax?: number;
+  speed?: string;
+  str?: number;
+  dex?: number;
+  con?: number;
+  int?: number;
+  wis?: number;
+  cha?: number;
+  /** Freeform multiline notes — attacks, traits, abilities, resistances. */
+  notes?: string;
+}
+
 /** A reusable roster entry — a player character or an enemy type — that can
  * be added into the initiative tracker instead of typing a name by hand.
  * Global to the app, like the encounter itself (not tied to one campaign). */
@@ -75,6 +98,8 @@ export interface Character {
   kind: 'pc' | 'enemy';
   /** Square portrait image; null shows a generic placeholder. */
   portrait: Blob | null;
+  /** Optional DM-only stat block (AC, HP, ability scores, notes). */
+  stats?: CharacterStats;
   createdAt: number;
   updatedAt: number;
 }
@@ -282,6 +307,14 @@ export async function listCharacters(): Promise<Character[]> {
     CHARACTER_STORE
   );
   return characters.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function getCharacter(id: string): Promise<Character | undefined> {
+  return withStore(
+    'readonly',
+    (s) => s.get(id) as IDBRequest<Character | undefined>,
+    CHARACTER_STORE
+  );
 }
 
 export async function addCharacter(character: Character): Promise<void> {

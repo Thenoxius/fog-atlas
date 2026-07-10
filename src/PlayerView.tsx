@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getMap, type MapLabel, type MapToken } from './db';
+import { getCharacter, getMap, type MapLabel, type MapToken } from './db';
 import { buildGridPath, strokeGrid, type GridConfig } from './grid';
 import { drawLabels } from './labels';
 import { drawTokens } from './tokens';
@@ -68,6 +68,14 @@ export function PlayerView() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [initiative, setInitiative] = useState<PublicInitiativeState | null>(null);
+
+  // Portrait chips: only the characterId arrives over the channel — the Blob
+  // is read here from the shared IndexedDB 'characters' store and cached as an
+  // object URL (revoked on unmount). attemptedIds avoids re-fetching a
+  // character we've already looked up (whether or not it had a portrait).
+  const portraitUrls = useRef<Map<string, string>>(new Map());
+  const attemptedIds = useRef<Set<string>>(new Set());
+  const [, bumpPortraits] = useState(0);
 
   // Table-TV layout: mirror the turn order at the bottom of the screen too,
   // and flip either copy upside down, so players on both sides of a
@@ -292,6 +300,42 @@ export function PlayerView() {
     ensureMapFontsLoaded().then(() => scheduleDraw());
   }, [scheduleDraw]);
 
+  // Revoke cached portrait object URLs on unmount.
+  useEffect(() => {
+    const urls = portraitUrls.current;
+    return () => {
+      urls.forEach((u) => URL.revokeObjectURL(u));
+      urls.clear();
+    };
+  }, []);
+
+  // When the turn order changes, lazily fetch portraits for any linked
+  // characters we haven't tried yet, then re-render so the chips pick them up.
+  useEffect(() => {
+    if (!initiative) return;
+    const missing = initiative.order
+      .map((c) => c.characterId)
+      .filter((id): id is string => !!id && !attemptedIds.current.has(id));
+    if (missing.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      let changed = false;
+      for (const id of missing) {
+        attemptedIds.current.add(id);
+        const character = await getCharacter(id).catch(() => undefined);
+        if (cancelled) return;
+        if (character?.portrait) {
+          portraitUrls.current.set(id, URL.createObjectURL(character.portrait));
+          changed = true;
+        }
+      }
+      if (changed && !cancelled) bumpPortraits((v) => v + 1);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [initiative]);
+
   // Fullscreen + auto-hiding controls
   useEffect(() => {
     const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
@@ -394,14 +438,22 @@ export function PlayerView() {
         onContextMenu={(e) => e.preventDefault()}
       />
       {initiative && initiative.order.length > 0 && (() => {
-        const chips = initiative.order.map((c) => (
-          <span
-            key={c.id}
-            className={`player-initiative-chip ${c.id === initiative.currentTurnId ? 'player-initiative-chip-active' : ''} ${c.isEnemy ? 'player-initiative-chip-enemy' : ''}`}
-          >
-            {c.name}
-          </span>
-        ));
+        const chips = initiative.order.map((c) => {
+          const portrait = c.characterId ? portraitUrls.current.get(c.characterId) : undefined;
+          return (
+            <span
+              key={c.id}
+              className={`player-initiative-chip ${c.id === initiative.currentTurnId ? 'player-initiative-chip-active' : ''} ${c.isEnemy ? 'player-initiative-chip-enemy' : ''}`}
+            >
+              {portrait && (
+                <span className="player-initiative-chip-portrait">
+                  <img src={portrait} alt="" />
+                </span>
+              )}
+              {c.name}
+            </span>
+          );
+        });
         return (
           <>
             <div className={`player-initiative-bar ${flipTopInitiative ? 'player-initiative-bar-flipped' : ''}`}>

@@ -223,6 +223,32 @@ export function IconPortrait({ size = 18 }: IconProps) {
   );
 }
 
+export function IconChevron({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+export function IconChevronsRight({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="m6 17 5-5-5-5" />
+      <path d="m13 17 5-5-5-5" />
+    </svg>
+  );
+}
+
+export function IconChevronsLeft({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="m11 17-5-5 5-5" />
+      <path d="m18 17-5-5 5-5" />
+    </svg>
+  );
+}
+
 export function IconNote({ size = 18 }: IconProps) {
   return (
     <svg {...base(size)}>

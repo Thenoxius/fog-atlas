@@ -750,12 +750,25 @@ h1, h2, h3 {
 
 .character-card {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 10px;
   padding: 8px 10px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: 10px;
+}
+
+/* An open details editor makes a card taller than the grid's auto rows, so
+   let it span the full width instead of squeezing beside its neighbours. */
+.character-card-open {
+  grid-column: 1 / -1;
+  border-color: var(--border-strong);
+}
+
+.character-card-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .character-card-body {
@@ -779,6 +792,107 @@ h1, h2, h3 {
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+}
+
+.character-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.character-details-toggle {
+  font-size: 12px;
+}
+
+.character-details-toggle-open {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.character-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+
+.character-details-row {
+  display: flex;
+  gap: 8px;
+}
+
+.character-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 64px;
+}
+
+.character-field-speed {
+  flex: 1;
+  width: auto;
+}
+
+.character-field > span,
+.character-ability-field > span {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--text-faint);
+  text-transform: uppercase;
+}
+
+.character-field input,
+.character-ability-field input {
+  width: 100%;
+  padding: 5px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.character-field input:focus,
+.character-ability-field input:focus,
+.character-notes:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.character-abilities {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 5px;
+}
+
+.character-ability-field {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.character-ability-field input {
+  text-align: center;
+  padding: 5px 2px;
+}
+
+.character-notes {
+  width: 100%;
+  min-height: 64px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.45;
+  resize: vertical;
 }
 
 /* ------------------------------------------------------------ editor */
@@ -1235,7 +1349,7 @@ kbd {
   top: 14px;
   right: 14px;
   z-index: 6;
-  width: 320px;
+  width: 384px;
   max-height: calc(100% - 28px);
   display: flex;
   flex-direction: column;
@@ -1277,8 +1391,18 @@ kbd {
   flex-direction: column;
   gap: 6px;
   overflow-y: auto;
-  max-height: 320px;
+  max-height: min(58vh, 640px);
   padding-right: 2px;
+}
+
+.initiative-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.initiative-header-btn-active {
+  color: var(--accent);
 }
 
 .initiative-empty {
@@ -1291,12 +1415,18 @@ kbd {
 
 .initiative-row {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 6px;
   padding: 6px 8px;
   border-radius: 8px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
+}
+
+.initiative-row-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .initiative-row-active {
@@ -1356,15 +1486,17 @@ kbd {
 }
 
 .initiative-hp-input {
-  width: 38px;
+  width: 44px;
   padding: 5px;
   border-radius: 6px;
   border: 1px solid var(--border-strong);
   background: var(--bg);
   color: var(--text);
   font: inherit;
-  font-size: 12px;
+  font-size: 13.5px;
+  font-weight: 600;
   text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 .initiative-hp-sep {
@@ -1383,6 +1515,539 @@ kbd {
   gap: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--border);
+}
+
+/* Left-of-row toggle: a portrait avatar for roster combatants, a plain
+   chevron for manual ones. Either way it opens the row's detail card. */
+.initiative-toggle {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text-faint);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.initiative-toggle:hover {
+  border-color: var(--accent);
+  color: var(--text-muted);
+}
+
+.initiative-toggle img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.initiative-toggle-open {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.initiative-toggle-avatar.initiative-toggle-open {
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* Tiny condition badges shown on the collapsed row for at-a-glance status. */
+.initiative-row-effects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-left: 44px;
+}
+
+.initiative-effect-tag {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--reveal) 16%, var(--bg-panel));
+  border: 1px solid color-mix(in srgb, var(--reveal) 40%, transparent);
+  color: color-mix(in srgb, var(--reveal) 75%, var(--text));
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Expanded detail card under a row: stat block + effects editor. */
+.initiative-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 6px 4px;
+  border-top: 1px dashed var(--border);
+}
+
+.initiative-detail-hint {
+  color: var(--text-faint);
+  font-size: 11.5px;
+  margin: 0;
+}
+
+.initiative-statblock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.initiative-stat-core {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.initiative-stat-chip {
+  padding: 2px 9px;
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+.initiative-stat-chip b {
+  color: var(--text-faint);
+  font-weight: 700;
+  margin-right: 3px;
+}
+
+.initiative-abilities {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+}
+
+.initiative-ability {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 4px 2px;
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
+.initiative-ability-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--text-faint);
+}
+
+.initiative-ability-score {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.initiative-ability-mod {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.initiative-stat-notes {
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.initiative-effects-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.initiative-effects-current {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.initiative-effect-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px 2px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--reveal) 16%, var(--bg-panel));
+  border: 1px solid color-mix(in srgb, var(--reveal) 40%, transparent);
+  color: color-mix(in srgb, var(--reveal) 78%, var(--text));
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.initiative-effect-badge:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.initiative-effects-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.initiative-effect-quick {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.initiative-effect-quick:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.initiative-effect-quick-active {
+  background: color-mix(in srgb, var(--reveal) 18%, var(--bg));
+  border-color: color-mix(in srgb, var(--reveal) 50%, transparent);
+  color: color-mix(in srgb, var(--reveal) 80%, var(--text));
+}
+
+.initiative-effect-input {
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.initiative-effect-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* "From roster" affordance and its dropdown picker. */
+.initiative-roster {
+  position: relative;
+}
+
+.initiative-roster-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.initiative-roster-btn-open {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.initiative-roster-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: 8px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+}
+
+.initiative-roster-group {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  padding: 4px 4px 2px;
+}
+
+.initiative-roster-empty {
+  padding: 2px 4px 4px;
+}
+
+.initiative-roster-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 6px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.initiative-roster-entry:hover {
+  background: var(--bg);
+  border-color: var(--border-strong);
+}
+
+.initiative-roster-thumb {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  color: var(--text-faint);
+}
+
+.initiative-roster-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.initiative-roster-name {
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* HP bar — the at-a-glance health readout on rows, reference cards, and the
+   compact strip. Green above half, gold above a quarter, red below (set
+   inline from hpColor). DM-only, like the HP numbers themselves. */
+.initiative-hpbar {
+  display: block;
+  width: 100%;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.initiative-hpbar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+
+/* Compact mode: the panel folds into a slim vertical strip of portraits so
+   the map stays visible during play — the current turn's portrait grows and
+   glows, HP slivers sit under each. */
+.initiative-panel-compact {
+  width: 78px;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 8px;
+}
+
+.initiative-compact-round {
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.initiative-compact-list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  overflow-y: auto;
+  padding: 2px 0;
+}
+
+.initiative-compact-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.initiative-compact-portrait {
+  width: 46px;
+  height: 46px;
+  border-radius: 999px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  border: 2px solid var(--border-strong);
+  transition: width 0.15s ease, height 0.15s ease, box-shadow 0.15s ease;
+}
+
+.initiative-compact-portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.initiative-compact-initial {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-faint);
+}
+
+.initiative-compact-item-enemy .initiative-compact-portrait {
+  border-color: color-mix(in srgb, var(--danger) 60%, var(--border-strong));
+}
+
+.initiative-compact-item-active .initiative-compact-portrait {
+  width: 58px;
+  height: 58px;
+  border-color: var(--accent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.initiative-compact-item-enemy.initiative-compact-item-active .initiative-compact-portrait {
+  border-color: var(--danger);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--danger) 55%, transparent);
+}
+
+.initiative-compact-hpbar {
+  width: 42px;
+  height: 4px;
+}
+
+/* Enemy reference rail: stat cards pinned top-left for constant reference
+   during combat, one per distinct enemy type. Sits under the label/token
+   editing panels, which share that corner. */
+.initiative-reference {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 5;
+  width: 300px;
+  max-height: calc(100% - 28px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.initiative-reference-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.initiative-reference-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.initiative-refcard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--danger) 8%, var(--bg-panel));
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--border));
+}
+
+.initiative-refcard-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.initiative-refcard-portrait {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  color: var(--text-faint);
+}
+
+.initiative-refcard-portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.initiative-refcard-name {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 650;
+}
+
+.initiative-refcard-instances {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.initiative-refcard-instance {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.initiative-refcard-instance-active {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.initiative-refcard-instname {
+  flex-shrink: 0;
+  min-width: 74px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.initiative-refcard-instance .initiative-hpbar {
+  flex: 1;
+  width: auto;
+}
+
+.initiative-refcard-hp {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 /* -------------------------------------------------------- player view */
@@ -1504,13 +2169,36 @@ kbd {
 }
 
 .player-initiative-chip {
-  padding: 4px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 14px;
   border-radius: 999px;
   background: var(--bg-panel);
   border: 1px solid var(--border-strong);
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 550;
+}
+
+/* Roster portrait shown inside a chip. Only the linked characterId travels
+   over the channel; the Blob is read from IndexedDB on the player side. */
+.player-initiative-chip-portrait {
+  width: 34px;
+  height: 34px;
+  margin-left: -8px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+}
+
+.player-initiative-chip-portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .player-initiative-chip-active {

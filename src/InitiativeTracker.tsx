@@ -1,9 +1,34 @@
-import { useEffect, useRef, useState } from 'react';
-import { getEncounter, saveEncounter, ACTIVE_ENCOUNTER_ID, type Combatant, type Encounter } from './db';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  getEncounter,
+  saveEncounter,
+  listCharacters,
+  ACTIVE_ENCOUNTER_ID,
+  type Character,
+  type Combatant,
+  type Encounter,
+} from './db';
 import type { PublicInitiativeState } from './present';
-import { IconClose, IconInitiative, IconTrash } from './icons';
+import {
+  IconChevron, IconChevronsLeft, IconChevronsRight, IconClose, IconInitiative, IconPortrait, IconTrash, IconUsers,
+} from './icons';
 
 const SAVE_DEBOUNCE = 500;
+
+// Conditions offered as one-tap buttons in the effects editor. Anything else
+// the DM can type by hand in the custom field beside them.
+const COMMON_CONDITIONS = [
+  'Blinded',
+  'Charmed',
+  'Frightened',
+  'Grappled',
+  'Paralyzed',
+  'Poisoned',
+  'Prone',
+  'Restrained',
+  'Stunned',
+  'Unconscious',
+];
 
 interface InitiativeTrackerProps {
   onClose: () => void;
@@ -28,8 +53,135 @@ function toPublic(encounter: Encounter): PublicInitiativeState {
   return {
     round: encounter.round,
     currentTurnId: encounter.currentTurnId,
-    order: sortByInitiative(encounter.combatants).map((c) => ({ id: c.id, name: c.name, isEnemy: !!c.isEnemy })),
+    // Only id/name/isEnemy/characterId travel — never HP, stats, or effects,
+    // and never the portrait Blob (the player window reads that from IndexedDB).
+    order: sortByInitiative(encounter.combatants).map((c) => ({
+      id: c.id,
+      name: c.name,
+      isEnemy: !!c.isEnemy,
+      characterId: c.characterId,
+    })),
   };
+}
+
+/** Next auto-numbered name for a roster enemy, derived from the current
+ * encounter (not a stored counter, so it resets when combat is cleared).
+ * Scans combatants matching `base` or `base #N` and returns `base #(max+1)`;
+ * the first one when none exist is `base #1`. */
+function nextEnemyName(base: string, combatants: Combatant[]): string {
+  const escaped = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`^${escaped}(?: #(\\d+))?$`);
+  let max = 0;
+  for (const c of combatants) {
+    const m = c.name.match(re);
+    if (m) {
+      const n = m[1] ? Number(m[1]) : 0;
+      if (n > max) max = n;
+    }
+  }
+  return `${base} #${max + 1}`;
+}
+
+function abilityMod(score: number): string {
+  const mod = Math.floor((score - 10) / 2);
+  return mod >= 0 ? `+${mod}` : `${mod}`;
+}
+
+// DM display preferences — per device (like the player screen's bar prefs),
+// not part of the encounter data.
+const PREF_COMPACT = 'fog-atlas-initiative-compact';
+const PREF_REFERENCE = 'fog-atlas-initiative-reference';
+
+function loadPref(key: string, fallback: boolean): boolean {
+  const v = localStorage.getItem(key);
+  return v === null ? fallback : v === '1';
+}
+
+function savePref(key: string, value: boolean) {
+  localStorage.setItem(key, value ? '1' : '0');
+}
+
+/** 0..1 fill for an HP bar, or null when the combatant has no max HP. A
+ * blank current field counts as full (freshly added from the roster). */
+function hpFraction(c: Combatant): number | null {
+  if (c.hpMax == null || c.hpMax <= 0) return null;
+  return Math.max(0, Math.min(1, (c.hpCurrent ?? c.hpMax) / c.hpMax));
+}
+
+function hpColor(fraction: number): string {
+  if (fraction > 0.5) return 'var(--ok)';
+  if (fraction > 0.25) return 'var(--reveal)';
+  return 'var(--danger)';
+}
+
+function HpBar({ combatant, className }: { combatant: Combatant; className?: string }) {
+  const f = hpFraction(combatant);
+  if (f === null) return null;
+  return (
+    <span className={`initiative-hpbar ${className ?? ''}`}>
+      <span className="initiative-hpbar-fill" style={{ width: `${f * 100}%`, background: hpColor(f) }} />
+    </span>
+  );
+}
+
+/** A character's stat block — shown in a row's expanded detail card and on
+ * the pinned enemy reference cards. DM-only, like everything around it. */
+function StatBlock({ character }: { character: Character | undefined }) {
+  if (!character) {
+    return <p className="initiative-detail-hint">No linked roster character.</p>;
+  }
+  const s = character.stats;
+  const hasCore = s && (s.ac != null || s.hpMax != null || (s.speed && s.speed.trim() !== ''));
+  const abilities: [string, number | undefined][] = s
+    ? [
+        ['STR', s.str],
+        ['DEX', s.dex],
+        ['CON', s.con],
+        ['INT', s.int],
+        ['WIS', s.wis],
+        ['CHA', s.cha],
+      ]
+    : [];
+  const hasAbilities = abilities.some(([, v]) => v != null);
+  const hasNotes = s?.notes && s.notes.trim() !== '';
+  if (!s || (!hasCore && !hasAbilities && !hasNotes)) {
+    return <p className="initiative-detail-hint">No stats yet — add them from the Characters roster.</p>;
+  }
+  return (
+    <div className="initiative-statblock">
+      {hasCore && (
+        <div className="initiative-stat-core">
+          {s.ac != null && (
+            <span className="initiative-stat-chip">
+              <b>AC</b> {s.ac}
+            </span>
+          )}
+          {s.hpMax != null && (
+            <span className="initiative-stat-chip">
+              <b>HP</b> {s.hpMax}
+            </span>
+          )}
+          {s.speed && s.speed.trim() !== '' && (
+            <span className="initiative-stat-chip">
+              <b>Speed</b> {s.speed}
+            </span>
+          )}
+        </div>
+      )}
+      {hasAbilities && (
+        <div className="initiative-abilities">
+          {abilities.map(([label, value]) => (
+            <div key={label} className="initiative-ability">
+              <span className="initiative-ability-label">{label}</span>
+              <span className="initiative-ability-score">{value ?? '—'}</span>
+              {value != null && <span className="initiative-ability-mod">{abilityMod(value)}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+      {hasNotes && <p className="initiative-stat-notes">{s.notes}</p>}
+    </div>
+  );
 }
 
 export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerProps) {
@@ -37,8 +189,23 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
   const [newName, setNewName] = useState('');
   const [newInitiative, setNewInitiative] = useState('');
   const [confirmingReset, setConfirmingReset] = useState(false);
+  const [rosterOpen, setRosterOpen] = useState(false);
+  const [characters, setCharacters] = useState<Character[]>([]);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [customEffect, setCustomEffect] = useState('');
+  const [compact, setCompact] = useState(() => loadPref(PREF_COMPACT, false));
+  const [showReference, setShowReference] = useState(() => loadPref(PREF_REFERENCE, true));
   const nameInputRef = useRef<HTMLInputElement>(null);
   const initInputRef = useRef<HTMLInputElement>(null);
+
+  // Per-row initiative inputs, so adding from the roster can focus the fresh
+  // row's roll field. Populated by each row's ref callback.
+  const rowInitRefs = useRef<Map<string, HTMLInputElement>>(new Map());
+  const pendingFocusRef = useRef<string | null>(null);
+
+  // Object-URL cache for row portrait avatars, keyed by characterId and
+  // revoked on unmount (same pattern as CharacterLibrary).
+  const portraitUrls = useRef<Map<string, string>>(new Map());
 
   // Debounce the IndexedDB write (so typing a name doesn't hit the DB on
   // every keystroke) while keeping local state + the player broadcast
@@ -57,11 +224,22 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
         onBroadcast(toPublic(e));
       })
       .catch(console.error);
+    // Load the roster up front so row avatars and stat blocks resolve without
+    // waiting for the picker to be opened.
+    listCharacters().then(setCharacters).catch(console.error);
     return () => {
       cancelled = true;
     };
     // Only load once on mount; onBroadcast is stable enough for this purpose
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const urls = portraitUrls.current;
+    return () => {
+      urls.forEach((u) => URL.revokeObjectURL(u));
+      urls.clear();
+    };
   }, []);
 
   useEffect(() => {
@@ -79,6 +257,19 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
     };
   }, []);
 
+  // Focus a freshly added roster row's initiative input after it renders.
+  useEffect(() => {
+    if (!pendingFocusRef.current) return;
+    const el = rowInitRefs.current.get(pendingFocusRef.current);
+    if (el) {
+      el.focus();
+      el.select();
+    }
+    pendingFocusRef.current = null;
+  });
+
+  const characterMap = useMemo(() => new Map(characters.map((c) => [c.id, c])), [characters]);
+
   if (!encounter) return null;
 
   const commit = (next: Encounter) => {
@@ -93,6 +284,17 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
     }, SAVE_DEBOUNCE);
   };
 
+  const portraitUrl = (characterId: string): string | null => {
+    const c = characterMap.get(characterId);
+    if (!c || !c.portrait) return null;
+    let url = portraitUrls.current.get(characterId);
+    if (!url) {
+      url = URL.createObjectURL(c.portrait);
+      portraitUrls.current.set(characterId, url);
+    }
+    return url;
+  };
+
   const sorted = sortByInitiative(encounter.combatants);
 
   const handleAdd = () => {
@@ -105,6 +307,76 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
     setNewName('');
     setNewInitiative('');
     nameInputRef.current?.focus();
+  };
+
+  const handleAddFromRoster = (character: Character) => {
+    const isEnemy = character.kind === 'enemy';
+    const name = isEnemy ? nextEnemyName(character.name, encounter.combatants) : character.name;
+    const combatant: Combatant = {
+      id: crypto.randomUUID(),
+      name,
+      initiative: 0,
+      isEnemy,
+      characterId: character.id,
+    };
+    // Prefill HP from the character's stat block when it has a max HP, so the
+    // DM starts from full without retyping it.
+    if (character.stats?.hpMax != null) {
+      combatant.hpMax = character.stats.hpMax;
+      combatant.hpCurrent = character.stats.hpMax;
+    }
+    commit({ ...encounter, combatants: [...encounter.combatants, combatant] });
+    pendingFocusRef.current = combatant.id;
+    setRosterOpen(false);
+  };
+
+  const openRoster = () => {
+    setRosterOpen((v) => {
+      if (!v) listCharacters().then(setCharacters).catch(console.error);
+      return !v;
+    });
+  };
+
+  const patchCombatant = (id: string, patch: Partial<Combatant>) => {
+    commit({
+      ...encounter,
+      combatants: encounter.combatants.map((x) => (x.id === id ? { ...x, ...patch } : x)),
+    });
+  };
+
+  const setEffects = (id: string, effects: string[]) => {
+    patchCombatant(id, { effects: effects.length ? effects : undefined });
+  };
+
+  const addEffect = (c: Combatant, effect: string) => {
+    const trimmed = effect.trim();
+    if (!trimmed) return;
+    const current = c.effects ?? [];
+    if (current.includes(trimmed)) return;
+    setEffects(c.id, [...current, trimmed]);
+  };
+
+  const removeEffect = (c: Combatant, effect: string) => {
+    setEffects(c.id, (c.effects ?? []).filter((e) => e !== effect));
+  };
+
+  const toggleExpand = (id: string) => {
+    setExpandedId((cur) => (cur === id ? null : id));
+    setCustomEffect('');
+  };
+
+  const toggleCompact = () => {
+    setCompact((v) => {
+      savePref(PREF_COMPACT, !v);
+      return !v;
+    });
+  };
+
+  const toggleReference = () => {
+    setShowReference((v) => {
+      savePref(PREF_REFERENCE, !v);
+      return !v;
+    });
   };
 
   const handleNextTurn = () => {
@@ -126,9 +398,120 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
   const handleReset = () => {
     commit({ ...encounter, round: 0, currentTurnId: null, combatants: [] });
     setConfirmingReset(false);
+    setExpandedId(null);
   };
 
+  const pcs = characters.filter((c) => c.kind === 'pc');
+  const enemies = characters.filter((c) => c.kind === 'enemy');
+
+  // One reference card per distinct enemy roster character in the encounter
+  // (Goblin #1–#3 share a single card), in initiative order of first
+  // appearance. Pinned on the left so enemy stats stay in view during combat.
+  const refCards: { character: Character; instances: Combatant[] }[] = [];
+  for (const c of sorted) {
+    if (!c.isEnemy || !c.characterId) continue;
+    const character = characterMap.get(c.characterId);
+    if (!character) continue;
+    const existing = refCards.find((r) => r.character.id === character.id);
+    if (existing) existing.instances.push(c);
+    else refCards.push({ character, instances: [c] });
+  }
+
+  const referenceRail = showReference && refCards.length > 0 && (
+    <aside className="initiative-reference">
+      <h4 className="initiative-reference-title">
+        <IconUsers size={13} />
+        Enemy reference
+      </h4>
+      <div className="initiative-reference-list">
+        {refCards.map(({ character, instances }) => (
+          <section key={character.id} className="initiative-refcard">
+            <header className="initiative-refcard-head">
+              <span className="initiative-refcard-portrait">
+                {portraitUrl(character.id) ? <img src={portraitUrl(character.id)!} alt="" /> : <IconPortrait size={18} />}
+              </span>
+              <h5 className="initiative-refcard-name">{character.name}</h5>
+            </header>
+            <StatBlock character={character} />
+            <div className="initiative-refcard-instances">
+              {instances.map((i) => (
+                <div
+                  key={i.id}
+                  className={`initiative-refcard-instance ${i.id === encounter.currentTurnId ? 'initiative-refcard-instance-active' : ''}`}
+                >
+                  <span className="initiative-refcard-instname">{i.name}</span>
+                  <HpBar combatant={i} />
+                  <span className="initiative-refcard-hp">
+                    {i.hpMax != null ? `${i.hpCurrent ?? i.hpMax}/${i.hpMax}` : '—'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+    </aside>
+  );
+
+  // Compact mode: the panel folds into a slim turn-order strip — big
+  // portraits, HP slivers, next-turn — so combat stays visible without
+  // covering the map. Tapping a portrait reopens the full panel on that
+  // combatant's details.
+  if (compact) {
+    return (
+      <>
+        {referenceRail}
+        <div className="initiative-panel initiative-panel-compact">
+          <button className="btn btn-ghost btn-sm" onClick={toggleCompact} title="Expand the initiative panel">
+            <IconChevronsLeft size={14} />
+          </button>
+          {encounter.round > 0 && (
+            <span className="initiative-compact-round" title={`Round ${encounter.round}`}>
+              {encounter.round}
+            </span>
+          )}
+          <div className="initiative-compact-list">
+            {sorted.map((c) => {
+              const url = c.characterId ? portraitUrl(c.characterId) : null;
+              return (
+                <button
+                  key={c.id}
+                  className={`initiative-compact-item ${c.id === encounter.currentTurnId ? 'initiative-compact-item-active' : ''} ${c.isEnemy ? 'initiative-compact-item-enemy' : ''}`}
+                  title={`${c.name}${c.hpMax != null ? ` — ${c.hpCurrent ?? c.hpMax}/${c.hpMax} HP` : ''}`}
+                  onClick={() => {
+                    setCompact(false);
+                    savePref(PREF_COMPACT, false);
+                    setExpandedId(c.id);
+                  }}
+                >
+                  <span className="initiative-compact-portrait">
+                    {url ? (
+                      <img src={url} alt="" />
+                    ) : (
+                      <span className="initiative-compact-initial">{(c.name.trim().charAt(0) || '?').toUpperCase()}</span>
+                    )}
+                  </span>
+                  <HpBar combatant={c} className="initiative-compact-hpbar" />
+                </button>
+              );
+            })}
+          </div>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={handleNextTurn}
+            disabled={sorted.length === 0}
+            title="Next turn"
+          >
+            <IconInitiative size={14} />
+          </button>
+        </div>
+      </>
+    );
+  }
+
   return (
+    <>
+    {referenceRail}
     <div className="initiative-panel">
       <header className="initiative-header">
         <h3>
@@ -136,98 +519,230 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
           Initiative
           {encounter.round > 0 && <span className="initiative-round">Round {encounter.round}</span>}
         </h3>
-        <button className="btn btn-ghost btn-sm" onClick={onClose} title="Close">
-          <IconClose size={14} />
-        </button>
+        <div className="initiative-header-actions">
+          <button
+            className={`btn btn-ghost btn-sm ${showReference && refCards.length > 0 ? 'initiative-header-btn-active' : ''}`}
+            onClick={toggleReference}
+            disabled={refCards.length === 0}
+            title={
+              refCards.length === 0
+                ? 'Enemy reference cards appear here once roster enemies join the encounter'
+                : showReference
+                  ? 'Hide the enemy reference cards'
+                  : 'Pin enemy reference cards on the left'
+            }
+          >
+            <IconUsers size={14} />
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={toggleCompact} title="Collapse to a portrait turn-order strip">
+            <IconChevronsRight size={14} />
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={onClose} title="Close">
+            <IconClose size={14} />
+          </button>
+        </div>
       </header>
 
       <div className="initiative-list">
         {sorted.length === 0 ? (
           <p className="initiative-empty">Add combatants below to start tracking turns.</p>
         ) : (
-          sorted.map((c) => (
-            <div
-              key={c.id}
-              className={`initiative-row ${c.id === encounter.currentTurnId ? 'initiative-row-active' : ''} ${c.isEnemy ? 'initiative-row-enemy' : ''}`}
-            >
-              <input
-                type="checkbox"
-                className="initiative-enemy-checkbox"
-                checked={!!c.isEnemy}
-                title="Enemy — shown to players so they can spot enemy turns"
-                onChange={(e) =>
-                  commit({
-                    ...encounter,
-                    combatants: encounter.combatants.map((x) => (x.id === c.id ? { ...x, isEnemy: e.target.checked } : x)),
-                  })
-                }
-              />
-              <input
-                className="initiative-name-input"
-                value={c.name}
-                onChange={(e) =>
-                  commit({
-                    ...encounter,
-                    combatants: encounter.combatants.map((x) => (x.id === c.id ? { ...x, name: e.target.value } : x)),
-                  })
-                }
-              />
-              <input
-                type="number"
-                className="initiative-init-input"
-                value={c.initiative}
-                title="Initiative"
-                onChange={(e) =>
-                  commit({
-                    ...encounter,
-                    combatants: encounter.combatants.map((x) =>
-                      x.id === c.id ? { ...x, initiative: Number(e.target.value) || 0 } : x
-                    ),
-                  })
-                }
-              />
-              <div className="initiative-hp" title="HP (DM only — never shown to players)">
-                <input
-                  type="number"
-                  className="initiative-hp-input"
-                  placeholder="HP"
-                  value={c.hpCurrent ?? ''}
-                  onChange={(e) =>
-                    commit({
-                      ...encounter,
-                      combatants: encounter.combatants.map((x) =>
-                        x.id === c.id
-                          ? { ...x, hpCurrent: e.target.value === '' ? undefined : Number(e.target.value) }
-                          : x
-                      ),
-                    })
-                  }
-                />
-                <span className="initiative-hp-sep">/</span>
-                <input
-                  type="number"
-                  className="initiative-hp-input"
-                  placeholder="max"
-                  value={c.hpMax ?? ''}
-                  onChange={(e) =>
-                    commit({
-                      ...encounter,
-                      combatants: encounter.combatants.map((x) =>
-                        x.id === c.id ? { ...x, hpMax: e.target.value === '' ? undefined : Number(e.target.value) } : x
-                      ),
-                    })
-                  }
-                />
-              </div>
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={() => commit({ ...encounter, combatants: encounter.combatants.filter((x) => x.id !== c.id) })}
-                title="Remove"
+          sorted.map((c) => {
+            const expanded = expandedId === c.id;
+            const avatarUrl = c.characterId ? portraitUrl(c.characterId) : null;
+            const effects = c.effects ?? [];
+            return (
+              <div
+                key={c.id}
+                className={`initiative-row ${c.id === encounter.currentTurnId ? 'initiative-row-active' : ''} ${c.isEnemy ? 'initiative-row-enemy' : ''} ${expanded ? 'initiative-row-expanded' : ''}`}
               >
-                <IconTrash size={14} />
-              </button>
-            </div>
-          ))
+                <div className="initiative-row-main">
+                  <button
+                    className={`initiative-toggle ${expanded ? 'initiative-toggle-open' : ''} ${c.characterId ? 'initiative-toggle-avatar' : ''}`}
+                    onClick={() => toggleExpand(c.id)}
+                    title={expanded ? 'Hide details' : 'Show stats & effects'}
+                    aria-expanded={expanded}
+                  >
+                    {c.characterId ? (
+                      avatarUrl ? (
+                        <img src={avatarUrl} alt="" />
+                      ) : (
+                        <IconPortrait size={20} />
+                      )
+                    ) : (
+                      <IconChevron size={16} />
+                    )}
+                  </button>
+                  <input
+                    type="checkbox"
+                    className="initiative-enemy-checkbox"
+                    checked={!!c.isEnemy}
+                    title="Enemy — shown to players so they can spot enemy turns"
+                    onChange={(e) => patchCombatant(c.id, { isEnemy: e.target.checked })}
+                  />
+                  <input
+                    className="initiative-name-input"
+                    value={c.name}
+                    onChange={(e) => patchCombatant(c.id, { name: e.target.value })}
+                  />
+                  <input
+                    ref={(el) => {
+                      if (el) rowInitRefs.current.set(c.id, el);
+                      else rowInitRefs.current.delete(c.id);
+                    }}
+                    type="number"
+                    className="initiative-init-input"
+                    value={c.initiative}
+                    title="Initiative"
+                    onChange={(e) => patchCombatant(c.id, { initiative: Number(e.target.value) || 0 })}
+                  />
+                  <div className="initiative-hp" title="HP (DM only — never shown to players)">
+                    <input
+                      type="number"
+                      className="initiative-hp-input"
+                      placeholder="HP"
+                      value={c.hpCurrent ?? ''}
+                      onChange={(e) =>
+                        patchCombatant(c.id, {
+                          hpCurrent: e.target.value === '' ? undefined : Number(e.target.value),
+                        })
+                      }
+                    />
+                    <span className="initiative-hp-sep">/</span>
+                    <input
+                      type="number"
+                      className="initiative-hp-input"
+                      placeholder="max"
+                      value={c.hpMax ?? ''}
+                      onChange={(e) =>
+                        patchCombatant(c.id, {
+                          hpMax: e.target.value === '' ? undefined : Number(e.target.value),
+                        })
+                      }
+                    />
+                  </div>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => commit({ ...encounter, combatants: encounter.combatants.filter((x) => x.id !== c.id) })}
+                    title="Remove"
+                  >
+                    <IconTrash size={14} />
+                  </button>
+                </div>
+
+                <HpBar combatant={c} />
+
+                {effects.length > 0 && (
+                  <div className="initiative-row-effects" title="Active effects (DM only)">
+                    {effects.map((e) => (
+                      <span key={e} className="initiative-effect-tag">
+                        {e}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {expanded && (
+                  <div className="initiative-detail">
+                    <StatBlock character={c.characterId ? characterMap.get(c.characterId) : undefined} />
+                    <div className="initiative-effects-editor">
+                      <div className="initiative-effects-current">
+                        {effects.length === 0 ? (
+                          <span className="initiative-detail-hint">No active effects.</span>
+                        ) : (
+                          effects.map((e) => (
+                            <button
+                              key={e}
+                              className="initiative-effect-badge"
+                              onClick={() => removeEffect(c, e)}
+                              title="Remove effect"
+                            >
+                              {e}
+                              <IconClose size={11} />
+                            </button>
+                          ))
+                        )}
+                      </div>
+                      <div className="initiative-effects-quick">
+                        {COMMON_CONDITIONS.map((cond) => {
+                          const active = effects.includes(cond);
+                          return (
+                            <button
+                              key={cond}
+                              className={`initiative-effect-quick ${active ? 'initiative-effect-quick-active' : ''}`}
+                              onClick={() => (active ? removeEffect(c, cond) : addEffect(c, cond))}
+                            >
+                              {cond}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <input
+                        className="initiative-effect-input"
+                        placeholder="Custom effect…"
+                        value={customEffect}
+                        onChange={(e) => setCustomEffect(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key !== 'Enter') return;
+                          e.preventDefault();
+                          addEffect(c, customEffect);
+                          setCustomEffect('');
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      <div className="initiative-roster">
+        <button
+          className={`btn btn-ghost btn-sm initiative-roster-btn ${rosterOpen ? 'initiative-roster-btn-open' : ''}`}
+          onClick={openRoster}
+        >
+          <IconUsers size={14} />
+          From roster
+        </button>
+        {rosterOpen && (
+          <div className="initiative-roster-picker">
+            {characters.length === 0 ? (
+              <p className="initiative-detail-hint initiative-roster-empty">
+                No roster characters yet — add some from the <strong>Characters</strong> button in the map library.
+              </p>
+            ) : (
+              <>
+                <div className="initiative-roster-group">Player Characters</div>
+                {pcs.length === 0 ? (
+                  <p className="initiative-detail-hint initiative-roster-empty">None yet.</p>
+                ) : (
+                  pcs.map((c) => (
+                    <button key={c.id} className="initiative-roster-entry" onClick={() => handleAddFromRoster(c)}>
+                      <span className="initiative-roster-thumb">
+                        {portraitUrl(c.id) ? <img src={portraitUrl(c.id)!} alt="" /> : <IconPortrait size={15} />}
+                      </span>
+                      <span className="initiative-roster-name">{c.name}</span>
+                    </button>
+                  ))
+                )}
+                <div className="initiative-roster-group">Enemies</div>
+                {enemies.length === 0 ? (
+                  <p className="initiative-detail-hint initiative-roster-empty">None yet.</p>
+                ) : (
+                  enemies.map((c) => (
+                    <button key={c.id} className="initiative-roster-entry" onClick={() => handleAddFromRoster(c)}>
+                      <span className="initiative-roster-thumb">
+                        {portraitUrl(c.id) ? <img src={portraitUrl(c.id)!} alt="" /> : <IconPortrait size={15} />}
+                      </span>
+                      <span className="initiative-roster-name">{c.name}</span>
+                    </button>
+                  ))
+                )}
+              </>
+            )}
+          </div>
         )}
       </div>
 
@@ -286,5 +801,6 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
         )}
       </div>
     </div>
+    </>
   );
 }

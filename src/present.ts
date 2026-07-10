@@ -14,10 +14,16 @@ export const PRESENT_PARAM = 'present';
 // Turn order sent to the player screen — deliberately just id + name (+
 // isEnemy, which is meant to be player-visible so they can spot enemy turns
 // at a glance). HP and other DM-only details never leave the DM screen.
+//
+// characterId links a chip to a roster Character so the player window can show
+// its portrait. The portrait Blob is NEVER sent over the channel — only the id
+// travels; the player window reads the Blob itself from the shared IndexedDB
+// 'characters' store (same as it does for map images and fog).
 export interface PublicCombatant {
   id: string;
   name: string;
   isEnemy: boolean;
+  characterId?: string;
 }
 
 export interface PublicInitiativeState {
