@@ -2361,13 +2361,31 @@ kbd {
   white-space: nowrap;
 }
 
+/* Carousel viewport: the tile strip never wraps — past a fixed width it
+   slides (translateX set from JS) so the active tile stays centered, and the
+   edges fade to hint at the tiles hidden ahead and behind. The generous
+   padding + negative margin keep the active tile's glow from being clipped
+   by overflow:hidden without growing the bar. */
 .player-initiative-order {
+  overflow: hidden;
+  max-width: min(68vw, 1000px);
+  padding: 14px 6px;
+  margin: -14px -6px;
+}
+
+.player-initiative-order-overflow {
+  mask-image: linear-gradient(to right, transparent 0, #000 32px, #000 calc(100% - 32px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 32px, #000 calc(100% - 32px), transparent 100%);
+}
+
+.player-initiative-strip {
   display: flex;
   gap: 10px;
-  flex-wrap: wrap;
+  width: max-content;
   /* Different card heights (the active portrait is bigger) — align the name
      row along the bottom so the labels read as one line. */
   align-items: flex-end;
+  transition: transform 0.35s ease;
 }
 
 /* BG3-style turn order: a square portrait tile per combatant with the name

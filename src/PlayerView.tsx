@@ -45,6 +45,74 @@ interface ViewTransform {
   y: number;
 }
 
+/** One bar's turn-order tiles as a single-row carousel. The strip never
+ * wraps: when it's wider than its viewport it slides so the tile whose turn
+ * it is stays centered, with faded edges hinting at the hidden neighbours
+ * ahead and behind. */
+function TurnOrderStrip({ state, portraits }: { state: PublicInitiativeState; portraits: Map<string, string> }) {
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const stripRef = useRef<HTMLDivElement>(null);
+  const [offset, setOffset] = useState(0);
+  const [overflowing, setOverflowing] = useState(false);
+
+  useEffect(() => {
+    const update = () => {
+      const viewport = viewportRef.current;
+      const strip = stripRef.current;
+      if (!viewport || !strip) return;
+      const vw = viewport.clientWidth;
+      const sw = strip.scrollWidth;
+      setOverflowing(sw > vw + 1);
+      if (sw <= vw + 1) {
+        setOffset(0);
+        return;
+      }
+      const active = strip.querySelector<HTMLElement>('.player-initiative-chip-active');
+      const center = active ? active.offsetLeft + active.offsetWidth / 2 : 0;
+      // Center the active tile, clamped so the strip never slides past its
+      // own ends (no gap at either edge).
+      setOffset(Math.min(0, Math.max(vw - sw, vw / 2 - center)));
+    };
+    update();
+    // Second pass once the active tile's grow transition has settled, so the
+    // centering uses its final size.
+    const late = window.setTimeout(update, 200);
+    window.addEventListener('resize', update);
+    return () => {
+      window.clearTimeout(late);
+      window.removeEventListener('resize', update);
+    };
+  }, [state]);
+
+  return (
+    <div
+      ref={viewportRef}
+      className={`player-initiative-order ${overflowing ? 'player-initiative-order-overflow' : ''}`}
+    >
+      <div ref={stripRef} className="player-initiative-strip" style={{ transform: `translateX(${offset}px)` }}>
+        {state.order.map((c) => {
+          const portrait = c.characterId ? portraits.get(c.characterId) : undefined;
+          return (
+            <span
+              key={c.id}
+              className={`player-initiative-chip ${c.id === state.currentTurnId ? 'player-initiative-chip-active' : ''} ${c.isEnemy ? 'player-initiative-chip-enemy' : ''} ${c.down ? 'player-initiative-chip-down' : ''}`}
+            >
+              <span className="player-initiative-chip-portrait">
+                {portrait ? (
+                  <img src={portrait} alt="" />
+                ) : (
+                  <span className="player-initiative-chip-initial">{(c.name.trim().charAt(0) || '?').toUpperCase()}</span>
+                )}
+              </span>
+              <span className="player-initiative-chip-name">{c.name}</span>
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function PlayerView() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<ImageBitmap | null>(null);
@@ -437,42 +505,22 @@ export function PlayerView() {
         onWheel={onWheel}
         onContextMenu={(e) => e.preventDefault()}
       />
-      {initiative && initiative.order.length > 0 && (() => {
-        const chips = initiative.order.map((c) => {
-          const portrait = c.characterId ? portraitUrls.current.get(c.characterId) : undefined;
-          return (
-            <span
-              key={c.id}
-              className={`player-initiative-chip ${c.id === initiative.currentTurnId ? 'player-initiative-chip-active' : ''} ${c.isEnemy ? 'player-initiative-chip-enemy' : ''} ${c.down ? 'player-initiative-chip-down' : ''}`}
+      {initiative && initiative.order.length > 0 && (
+        <>
+          <div className={`player-initiative-bar ${flipTopInitiative ? 'player-initiative-bar-flipped' : ''}`}>
+            {initiative.round > 0 && <span className="player-initiative-round">Round {initiative.round}</span>}
+            <TurnOrderStrip state={initiative} portraits={portraitUrls.current} />
+          </div>
+          {showBottomInitiative && (
+            <div
+              className={`player-initiative-bar player-initiative-bar-bottom ${flipBottomInitiative ? 'player-initiative-bar-flipped' : ''}`}
             >
-              <span className="player-initiative-chip-portrait">
-                {portrait ? (
-                  <img src={portrait} alt="" />
-                ) : (
-                  <span className="player-initiative-chip-initial">{(c.name.trim().charAt(0) || '?').toUpperCase()}</span>
-                )}
-              </span>
-              <span className="player-initiative-chip-name">{c.name}</span>
-            </span>
-          );
-        });
-        return (
-          <>
-            <div className={`player-initiative-bar ${flipTopInitiative ? 'player-initiative-bar-flipped' : ''}`}>
               {initiative.round > 0 && <span className="player-initiative-round">Round {initiative.round}</span>}
-              <div className="player-initiative-order">{chips}</div>
+              <TurnOrderStrip state={initiative} portraits={portraitUrls.current} />
             </div>
-            {showBottomInitiative && (
-              <div
-                className={`player-initiative-bar player-initiative-bar-bottom ${flipBottomInitiative ? 'player-initiative-bar-flipped' : ''}`}
-              >
-                {initiative.round > 0 && <span className="player-initiative-round">Round {initiative.round}</span>}
-                <div className="player-initiative-order">{chips}</div>
-              </div>
-            )}
-          </>
-        );
-      })()}
+          )}
+        </>
+      )}
       {waiting && (
         <div className="player-waiting">
           <span className="brand-icon welcome-icon"><IconMap size={26} /></span>
