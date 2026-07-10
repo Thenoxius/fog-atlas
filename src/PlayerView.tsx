@@ -445,12 +445,14 @@ export function PlayerView() {
               key={c.id}
               className={`player-initiative-chip ${c.id === initiative.currentTurnId ? 'player-initiative-chip-active' : ''} ${c.isEnemy ? 'player-initiative-chip-enemy' : ''} ${c.down ? 'player-initiative-chip-down' : ''}`}
             >
-              {portrait && (
-                <span className="player-initiative-chip-portrait">
+              <span className="player-initiative-chip-portrait">
+                {portrait ? (
                   <img src={portrait} alt="" />
-                </span>
-              )}
-              {c.name}
+                ) : (
+                  <span className="player-initiative-chip-initial">{(c.name.trim().charAt(0) || '?').toUpperCase()}</span>
+                )}
+              </span>
+              <span className="player-initiative-chip-name">{c.name}</span>
             </span>
           );
         });
