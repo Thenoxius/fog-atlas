@@ -60,7 +60,11 @@ function TurnOrderStrip({ state, portraits }: { state: PublicInitiativeState; po
       const viewport = viewportRef.current;
       const strip = stripRef.current;
       if (!viewport || !strip) return;
-      const vw = viewport.clientWidth;
+      // Work in the content box: the strip's origin and clipping both sit
+      // inside the viewport's padding, so clamping against clientWidth
+      // (which includes it) would let the last tile slide under the edge.
+      const cs = getComputedStyle(viewport);
+      const vw = viewport.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
       const sw = strip.scrollWidth;
       setOverflowing(sw > vw + 1);
       if (sw <= vw + 1) {
