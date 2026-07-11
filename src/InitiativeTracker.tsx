@@ -68,10 +68,11 @@ function normalizeEncounter(e: Encounter): Encounter {
   };
 }
 
-function toPublic(encounter: Encounter): PublicInitiativeState {
+function toPublic(encounter: Encounter, barScale: number): PublicInitiativeState {
   return {
     round: encounter.round,
     currentTurnId: encounter.currentTurnId,
+    barScale,
     // Only id/name/isEnemy/down/characterId travel — never HP, stats, or
     // effects, and never the portrait Blob (the player window reads that
     // from IndexedDB).
@@ -112,6 +113,14 @@ function abilityMod(score: number): string {
 // not part of the encounter data.
 const PREF_COMPACT = 'fog-atlas-initiative-compact';
 const PREF_REFERENCE = 'fog-atlas-initiative-reference';
+// Size of the turn-order bar on the PLAYER screen, controlled from here so
+// the player window stays control-free. Travels in PublicInitiativeState.
+const PREF_PLAYER_BAR_SCALE = 'fog-atlas-initiative-player-scale';
+
+function loadScalePref(): number {
+  const v = Number.parseFloat(localStorage.getItem(PREF_PLAYER_BAR_SCALE) ?? '');
+  return Number.isFinite(v) ? Math.min(1.6, Math.max(0.6, v)) : 1;
+}
 
 function loadPref(key: string, fallback: boolean): boolean {
   const v = localStorage.getItem(key);
@@ -221,6 +230,9 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
   const [confirmDeleteSavedId, setConfirmDeleteSavedId] = useState<string | null>(null);
   const [compact, setCompact] = useState(() => loadPref(PREF_COMPACT, false));
   const [showReference, setShowReference] = useState(() => loadPref(PREF_REFERENCE, true));
+  const [playerBarScale, setPlayerBarScale] = useState(loadScalePref);
+  const playerBarScaleRef = useRef(playerBarScale);
+  playerBarScaleRef.current = playerBarScale;
   const nameInputRef = useRef<HTMLInputElement>(null);
   const initInputRef = useRef<HTMLInputElement>(null);
 
@@ -247,7 +259,7 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
         if (cancelled) return;
         const e = loaded ? normalizeEncounter(loaded) : EMPTY_ENCOUNTER;
         setEncounter(e);
-        onBroadcast(toPublic(e));
+        onBroadcast(toPublic(e, playerBarScaleRef.current));
       })
       .catch(console.error);
     // Load the roster up front so row avatars and stat blocks resolve without
@@ -301,7 +313,7 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
   const commit = (next: Encounter) => {
     const withTimestamp = { ...next, updatedAt: Date.now() };
     setEncounter(withTimestamp);
-    onBroadcast(toPublic(withTimestamp));
+    onBroadcast(toPublic(withTimestamp, playerBarScale));
     pendingRef.current = withTimestamp;
     window.clearTimeout(saveTimerRef.current);
     saveTimerRef.current = window.setTimeout(() => {
@@ -499,6 +511,14 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
       savePref(PREF_REFERENCE, !v);
       return !v;
     });
+  };
+
+  const handlePlayerBarScale = (percent: number) => {
+    const scale = Math.min(1.6, Math.max(0.6, percent / 100));
+    setPlayerBarScale(scale);
+    localStorage.setItem(PREF_PLAYER_BAR_SCALE, String(scale));
+    // Pure display change — rebroadcast with the new scale, nothing to save.
+    if (encounter) onBroadcast(toPublic(encounter, scale));
   };
 
   const handleNextTurn = () => {
@@ -1032,6 +1052,22 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
         <button className="btn btn-secondary btn-sm" onClick={handleAdd} disabled={!newName.trim() || newInitiative === ''}>
           Add
         </button>
+      </div>
+
+      <div
+        className="initiative-scale-row"
+        title="Size of the turn-order bar on the player screen — portraits and names scale together"
+      >
+        <span className="initiative-scale-label">Player bar size</span>
+        <input
+          type="range"
+          min={60}
+          max={160}
+          step={10}
+          value={Math.round(playerBarScale * 100)}
+          onChange={(e) => handlePlayerBarScale(Number(e.target.value))}
+        />
+        <span className="initiative-scale-value">{Math.round(playerBarScale * 100)}%</span>
       </div>
 
       <div className="initiative-controls">

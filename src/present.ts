@@ -33,6 +33,10 @@ export interface PublicInitiativeState {
   round: number;
   currentTurnId: string | null;
   order: PublicCombatant[];
+  /** Display scale for the player screen's turn-order bar (1 = default),
+   * set from the DM's Initiative panel so the player screen stays
+   * control-free. Pure presentation — carries no combat data. */
+  barScale?: number;
 }
 
 export type PresentMessage =

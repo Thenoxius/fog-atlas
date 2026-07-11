@@ -1591,6 +1591,36 @@ kbd {
   border-top: 1px solid var(--border);
 }
 
+/* DM-side slider for the PLAYER screen's turn-order bar size, so the player
+   window itself stays control-free. */
+.initiative-scale-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.initiative-scale-row input[type='range'] {
+  flex: 1;
+  min-width: 0;
+}
+
+.initiative-scale-label {
+  color: var(--text-muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.initiative-scale-value {
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 34px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Left-of-row toggle: a portrait avatar for roster combatants, a plain
    chevron for manual ones. Either way it opens the row's detail card. */
 .initiative-toggle {
@@ -2380,7 +2410,7 @@ kbd {
 
 .player-initiative-strip {
   display: flex;
-  gap: 10px;
+  gap: calc(10px * var(--turnbar-scale, 1));
   width: max-content;
   /* Different card heights (the active portrait is bigger) — align the name
      row along the bottom so the labels read as one line. */
@@ -2391,14 +2421,16 @@ kbd {
 /* BG3-style turn order: a square portrait tile per combatant with the name
    underneath. The tile whose turn it is grows and gets a glowing border —
    accent for allies, red for enemies. No HP here, ever. */
+/* Every size in the tile derives from --turnbar-scale (1 = default), set on
+   the bar from the DM's "Player bar size" slider in the Initiative panel. */
 .player-initiative-chip {
   display: inline-flex;
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  max-width: 86px;
+  max-width: calc(86px * var(--turnbar-scale, 1));
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--turnbar-scale, 1));
   font-weight: 550;
 }
 
@@ -2406,8 +2438,8 @@ kbd {
    over the channel; the Blob is read from IndexedDB on the player side.
    Combatants without a portrait get their initial on the square instead. */
 .player-initiative-chip-portrait {
-  width: 54px;
-  height: 54px;
+  width: calc(54px * var(--turnbar-scale, 1));
+  height: calc(54px * var(--turnbar-scale, 1));
   flex-shrink: 0;
   display: grid;
   place-items: center;
@@ -2426,13 +2458,13 @@ kbd {
 }
 
 .player-initiative-chip-initial {
-  font-size: 22px;
+  font-size: calc(22px * var(--turnbar-scale, 1));
   font-weight: 700;
   color: var(--text-faint);
 }
 
 .player-initiative-chip-name {
-  max-width: 86px;
+  max-width: calc(86px * var(--turnbar-scale, 1));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2444,8 +2476,8 @@ kbd {
 }
 
 .player-initiative-chip-active .player-initiative-chip-portrait {
-  width: 68px;
-  height: 68px;
+  width: calc(68px * var(--turnbar-scale, 1));
+  height: calc(68px * var(--turnbar-scale, 1));
   border-color: var(--accent);
   box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 55%, transparent);
 }

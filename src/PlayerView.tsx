@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { getCharacter, getMap, type MapLabel, type MapToken } from './db';
 import { buildGridPath, strokeGrid, type GridConfig } from './grid';
 import { drawLabels } from './labels';
@@ -509,22 +509,27 @@ export function PlayerView() {
         onWheel={onWheel}
         onContextMenu={(e) => e.preventDefault()}
       />
-      {initiative && initiative.order.length > 0 && (
-        <>
-          <div className={`player-initiative-bar ${flipTopInitiative ? 'player-initiative-bar-flipped' : ''}`}>
-            {initiative.round > 0 && <span className="player-initiative-round">Round {initiative.round}</span>}
-            <TurnOrderStrip state={initiative} portraits={portraitUrls.current} />
-          </div>
-          {showBottomInitiative && (
-            <div
-              className={`player-initiative-bar player-initiative-bar-bottom ${flipBottomInitiative ? 'player-initiative-bar-flipped' : ''}`}
-            >
+      {initiative && initiative.order.length > 0 && (() => {
+        // DM-controlled display scale for the whole bar (tiles, names, gaps).
+        const barStyle = { '--turnbar-scale': initiative.barScale ?? 1 } as CSSProperties;
+        return (
+          <>
+            <div className={`player-initiative-bar ${flipTopInitiative ? 'player-initiative-bar-flipped' : ''}`} style={barStyle}>
               {initiative.round > 0 && <span className="player-initiative-round">Round {initiative.round}</span>}
               <TurnOrderStrip state={initiative} portraits={portraitUrls.current} />
             </div>
-          )}
-        </>
-      )}
+            {showBottomInitiative && (
+              <div
+                className={`player-initiative-bar player-initiative-bar-bottom ${flipBottomInitiative ? 'player-initiative-bar-flipped' : ''}`}
+                style={barStyle}
+              >
+                {initiative.round > 0 && <span className="player-initiative-round">Round {initiative.round}</span>}
+                <TurnOrderStrip state={initiative} portraits={portraitUrls.current} />
+              </div>
+            )}
+          </>
+        );
+      })()}
       {waiting && (
         <div className="player-waiting">
           <span className="brand-icon welcome-icon"><IconMap size={26} /></span>
