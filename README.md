@@ -47,7 +47,8 @@ Opens at `http://localhost:5173`. No accounts, no API keys, no backend to config
 - **DM notes** — pin private notes anywhere on the map for your own reference; they never sync to the player screen, not even hidden under fog.
 - **Character roster** — a reusable library of player characters and enemy types with portraits and optional DM-only stat blocks (AC, HP, ability scores, freeform notes), managed from the **Characters** button in the library and loaded straight into the initiative tracker.
 - **Bundled SRD monsters** — all ~330 monster stat blocks from the D&D 5.1 System Reference Document, searchable from the Characters screen; one click copies a monster into your roster as a fully editable enemy (stats, traits, and actions prefilled).
-- **100% local** — everything lives in your browser's storage; works offline.
+- **Backup & restore** — download your whole library (maps, fog, characters, encounters) as a zip from the library footer, and merge it back on any device.
+- **100% local** — everything lives in your browser's storage, and a service worker makes the app itself installable and fully offline-capable.
 
 ## How it works
 

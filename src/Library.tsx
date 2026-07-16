@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { addMap, deleteMap, getSceneMaps, listMaps, renameMap, renameScene, type MapRecord } from './db';
+import { buildBackup, restoreBackup } from './backup';
 import { buildRecordFromFile } from './mapImport';
 import { MapPicker } from './MapPicker';
 import { Credits } from './Credits';
 import { CharacterLibrary } from './CharacterLibrary';
-import { IconAward, IconCoffee, IconCollection, IconEdit, IconLayers, IconMap, IconTrash, IconUpload, IconUsers } from './icons';
+import {
+  IconAward, IconCoffee, IconCollection, IconEdit, IconLayers, IconMap, IconSave, IconTrash, IconUpload, IconUsers,
+} from './icons';
 
 const KOFI_URL = 'https://ko-fi.com/thenoxius';
 const WELCOME_SEEN_KEY = 'fog-atlas-welcome-seen';
@@ -62,13 +65,55 @@ export function Library({ onOpenMap }: LibraryProps) {
   const [creditsOpen, setCreditsOpen] = useState(false);
   const [charactersOpen, setCharactersOpen] = useState(false);
   const [welcomeOpen, setWelcomeOpen] = useState(() => !localStorage.getItem(WELCOME_SEEN_KEY));
+  const [backupBusy, setBackupBusy] = useState<'export' | 'restore' | null>(null);
+  const [backupStatus, setBackupStatus] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const restoreInputRef = useRef<HTMLInputElement>(null);
   const thumbUrls = useRef<Map<string, string>>(new Map());
 
   const dismissWelcome = () => {
     localStorage.setItem(WELCOME_SEEN_KEY, '1');
     setWelcomeOpen(false);
+  };
+
+  // Everything lives in this browser's storage, so a downloadable archive is
+  // the backup story — and the way to move a library to another device.
+  const handleBackup = async () => {
+    setBackupBusy('export');
+    setBackupStatus('');
+    try {
+      const blob = await buildBackup();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `fog-atlas-backup-${new Date().toISOString().slice(0, 10)}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setBackupStatus('Backup downloaded.');
+    } catch (err) {
+      console.error(err);
+      setBackupStatus('Backup failed — see the browser console.');
+    }
+    setBackupBusy(null);
+  };
+
+  const handleRestoreFile = async (file: File) => {
+    setBackupBusy('restore');
+    setBackupStatus('');
+    try {
+      const summary = await restoreBackup(file);
+      setBackupStatus(
+        `Restored ${summary.maps} map${summary.maps === 1 ? '' : 's'}, ` +
+          `${summary.characters} character${summary.characters === 1 ? '' : 's'}, ` +
+          `${summary.savedEncounters} saved encounter${summary.savedEncounters === 1 ? '' : 's'}.`
+      );
+      await refresh();
+    } catch (err) {
+      console.error(err);
+      setBackupStatus(err instanceof Error ? err.message : 'Restore failed — see the browser console.');
+    }
+    setBackupBusy(null);
   };
 
   const refresh = useCallback(async () => {
@@ -323,8 +368,40 @@ export function Library({ onOpenMap }: LibraryProps) {
       </main>
 
       <footer className="library-footer">
-        <span>Maps, fog, and thumbnails are stored in your browser's IndexedDB on this machine.</span>
+        <span>
+          Maps, fog, and thumbnails are stored in your browser's IndexedDB on this machine.
+          {backupStatus && <span className="backup-status"> {backupStatus}</span>}
+        </span>
         <span className="footer-links">
+          <button
+            className="kofi-link footer-link-btn"
+            onClick={handleBackup}
+            disabled={backupBusy !== null}
+            title="Download your whole library (maps, fog, characters, encounters) as a zip"
+          >
+            <IconSave size={13} />
+            {backupBusy === 'export' ? 'Backing up…' : 'Backup'}
+          </button>
+          <button
+            className="kofi-link footer-link-btn"
+            onClick={() => restoreInputRef.current?.click()}
+            disabled={backupBusy !== null}
+            title="Restore a backup zip — merges into this library, overwriting same ids, never deleting"
+          >
+            <IconUpload size={13} />
+            {backupBusy === 'restore' ? 'Restoring…' : 'Restore'}
+          </button>
+          <input
+            ref={restoreInputRef}
+            type="file"
+            accept=".zip,application/zip"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleRestoreFile(file);
+              e.target.value = '';
+            }}
+          />
           <button className="kofi-link footer-link-btn" onClick={() => setCreditsOpen(true)} title="See who made the built-in maps">
             <IconAward size={13} />
             Map credits

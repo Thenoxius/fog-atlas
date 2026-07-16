@@ -2336,6 +2336,11 @@ kbd {
   outline-offset: 3px;
 }
 
+.backup-status {
+  color: var(--ok);
+  font-weight: 600;
+}
+
 /* -------------------------------------------------------- player view */
 
 /* The player screen deliberately keeps its own night palette: the parchment

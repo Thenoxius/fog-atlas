@@ -245,6 +245,11 @@ export async function addMap(record: MapRecord): Promise<void> {
   await withStore('readwrite', (s) => s.add(record));
 }
 
+/** Insert-or-overwrite, used by backup restore (merge by id). */
+export async function putMap(record: MapRecord): Promise<void> {
+  await withStore('readwrite', (s) => s.put(record));
+}
+
 export async function saveFog(id: string, fog: Blob | null): Promise<void> {
   const record = await getMap(id);
   if (!record) throw new Error('Map not found');
@@ -362,6 +367,11 @@ export async function getCharacter(id: string): Promise<Character | undefined> {
 
 export async function addCharacter(character: Character): Promise<void> {
   await withStore('readwrite', (s) => s.add(character), CHARACTER_STORE);
+}
+
+/** Insert-or-overwrite, used by backup restore (merge by id). */
+export async function putCharacter(character: Character): Promise<void> {
+  await withStore('readwrite', (s) => s.put(character), CHARACTER_STORE);
 }
 
 export async function updateCharacter(id: string, patch: Partial<Character>): Promise<void> {
