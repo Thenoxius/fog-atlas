@@ -1,26 +1,36 @@
-/* Fog Atlas — professional dark UI for DM map preparation.
-   Everything is system-font and dependency-free so the app works
-   fully offline. */
+/* Fog Atlas — "The Cartographer's Atlas": the DM screen is a chart table.
+   Aged parchment grounds, iron-gall ink text, antique ink-blue for the
+   DM's tools, wax-seal red reserved for enemies and destructive actions.
+   The player screen keeps its own night palette (see .player-view) — on
+   the TV the map is the star. Fonts ship with the app; fully offline. */
 
 :root {
-  --bg: #0e1116;
-  --bg-raised: #151a22;
-  --bg-panel: #1a202b;
-  --border: #262e3c;
-  --border-strong: #374153;
-  --text: #e7ecf4;
-  --text-muted: #8b96a8;
-  --text-faint: #5c6779;
-  --accent: #4f7cff;
-  --accent-hover: #6890ff;
-  --accent-contrast: #ffffff;
-  --reveal: #ffd670;
-  --fog: #94a3ff;
-  --danger: #e5484d;
-  --ok: #46c98c;
+  /* SVG fractal noise, tiled — reads as paper fiber on parchment. */
+  --paper-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E");
+
+  --bg: #e3d2ae;
+  --bg-raised: #efe4c6;
+  --bg-panel: #f6edd6;
+  --border: #c9b287;
+  --border-strong: #a78c5d;
+  --text: #372b1a;
+  --text-muted: #5f4d2e;
+  --text-faint: #8a7551;
+  --accent: #2e5578;
+  --accent-hover: #3d6a92;
+  --accent-contrast: #f6edd6;
+  /* Wax-seal red: flourishes and danger share the hue on purpose — red on
+     this chart always means "enemy" or "destructive". */
+  --seal: #93392b;
+  --reveal: #a97b14;
+  --fog: #56688f;
+  --danger: #9a3b2e;
+  --ok: #55713d;
   --radius: 10px;
-  --shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.6);
+  --shadow: 0 14px 30px -14px rgba(74, 52, 20, 0.45);
   --font: -apple-system, "Segoe UI", system-ui, Roboto, "Helvetica Neue", sans-serif;
+  --font-display: 'IM Fell English SC', 'Palatino Linotype', Georgia, serif;
+  --font-caps: 'Cinzel', 'Palatino Linotype', Georgia, serif;
 }
 
 * {
@@ -35,7 +45,12 @@ body,
 }
 
 body {
-  background: var(--bg);
+  background:
+    var(--paper-noise),
+    radial-gradient(ellipse at 50% -10%, rgba(255, 250, 235, 0.5), transparent 55%),
+    radial-gradient(ellipse at 50% 115%, rgba(96, 66, 24, 0.2), transparent 65%),
+    linear-gradient(160deg, #e9d8b6, #d9c294);
+  background-attachment: fixed;
   color: var(--text);
   font-family: var(--font);
   font-size: 14px;
@@ -46,6 +61,20 @@ h1, h2, h3 {
   margin: 0;
   font-weight: 650;
   letter-spacing: -0.01em;
+}
+
+/* Old-print display faces: IM Fell for the big titles, Cinzel for panel
+   headings — both already bundled for map labels. */
+h1, h2 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+h3, h4 {
+  font-family: var(--font-caps);
+  font-weight: 650;
+  letter-spacing: 0.03em;
 }
 
 /* ----------------------------------------------------------- buttons */
@@ -89,7 +118,7 @@ h1, h2, h3 {
 
 .btn-secondary:hover:not(:disabled) {
   border-color: var(--accent);
-  color: #fff;
+  color: var(--text);
 }
 
 .btn-ghost {
@@ -104,7 +133,7 @@ h1, h2, h3 {
 
 .btn-danger {
   background: var(--danger);
-  color: #fff;
+  color: #f6edd6;
 }
 
 .btn-sm {
@@ -143,13 +172,21 @@ h1, h2, h3 {
   width: 44px;
   height: 44px;
   border-radius: 12px;
-  background: linear-gradient(135deg, var(--accent), #7a5cff);
-  color: #fff;
+  background: linear-gradient(135deg, var(--accent), #1f3a55);
+  color: #f6edd6;
   box-shadow: 0 4px 18px -4px color-mix(in srgb, var(--accent) 60%, transparent);
 }
 
 .brand h1 {
-  font-size: 19px;
+  font-size: 22px;
+}
+
+/* Compass fleuron after the wordmark, in wax-seal red. */
+.brand h1::after {
+  content: ' \2726';
+  color: var(--seal);
+  font-size: 14px;
+  vertical-align: 2px;
 }
 
 .brand-sub {
@@ -189,7 +226,7 @@ h1, h2, h3 {
   border-radius: 8px;
   border: 1px solid color-mix(in srgb, var(--danger) 50%, transparent);
   background: color-mix(in srgb, var(--danger) 12%, transparent);
-  color: #ffb3b5;
+  color: #7c2a1e;
 }
 
 .empty-state {
@@ -241,7 +278,7 @@ h1, h2, h3 {
   padding: 0;
   border: 0;
   cursor: pointer;
-  background: #000;
+  background: #cbb78c;
 }
 
 .map-thumb img {
@@ -266,7 +303,7 @@ h1, h2, h3 {
   font-size: 15px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  background: rgba(10, 13, 20, 0.45);
+  background: rgba(42, 28, 8, 0.5);
   opacity: 0;
   transition: opacity 0.18s;
 }
@@ -281,7 +318,7 @@ h1, h2, h3 {
   left: 10px;
   padding: 3px 9px;
   border-radius: 999px;
-  background: rgba(15, 18, 28, 0.85);
+  background: rgba(246, 237, 214, 0.92);
   border: 1px solid var(--border-strong);
   color: var(--fog);
   font-size: 11.5px;
@@ -325,7 +362,7 @@ h1, h2, h3 {
   gap: 5px;
   padding: 3px 9px;
   border-radius: 999px;
-  background: rgba(15, 18, 28, 0.85);
+  background: rgba(246, 237, 214, 0.92);
   border: 1px solid var(--border-strong);
   color: var(--text);
   font-size: 11.5px;
@@ -427,7 +464,7 @@ h1, h2, h3 {
   background: var(--bg-raised);
   border: 1px solid var(--border-strong);
   border-radius: 14px;
-  box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.8);
+  box-shadow: 0 30px 80px -20px rgba(60, 42, 16, 0.55);
   overflow: hidden;
 }
 
@@ -486,7 +523,7 @@ h1, h2, h3 {
   background: var(--bg-raised);
   border: 1px solid var(--border-strong);
   border-radius: 14px;
-  box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.8);
+  box-shadow: 0 30px 80px -20px rgba(60, 42, 16, 0.55);
 }
 
 .welcome-icon {
@@ -528,7 +565,7 @@ h1, h2, h3 {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(5, 7, 11, 0.72);
+  background: rgba(46, 32, 12, 0.55);
   backdrop-filter: blur(3px);
 }
 
@@ -540,7 +577,7 @@ h1, h2, h3 {
   background: var(--bg-raised);
   border: 1px solid var(--border-strong);
   border-radius: 14px;
-  box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.8);
+  box-shadow: 0 30px 80px -20px rgba(60, 42, 16, 0.55);
   overflow: hidden;
 }
 
@@ -998,7 +1035,8 @@ h1, h2, h3 {
   align-items: center;
   gap: 4px;
   padding: 0 8px;
-  border-right: 1px solid var(--border);
+  /* Dashed like route lines on a chart. */
+  border-right: 1px dashed color-mix(in srgb, var(--border-strong) 70%, transparent);
 }
 
 .toolbar-group:last-child,
@@ -1146,7 +1184,7 @@ h1, h2, h3 {
 
 .note-privacy-hint {
   flex: 1;
-  color: #94a3b8;
+  color: var(--text-faint);
   font-size: 12px;
 }
 
@@ -1201,7 +1239,7 @@ h1, h2, h3 {
   transform: translateX(-50%);
   z-index: 6;
   padding: 7px 14px;
-  background: rgba(15, 18, 28, 0.85);
+  background: rgba(246, 237, 214, 0.92);
   border: 1px solid var(--border-strong);
   border-radius: 999px;
   color: var(--text-muted);
@@ -1272,13 +1310,16 @@ input[type='range'] {
 .save-saving { color: var(--text-muted); }
 .save-unsaved { color: var(--reveal); }
 
+/* The desk around the chart: parchment checker keeps the transparency
+   affordance, warm light falls from above. */
 .editor-canvas-wrap {
   flex: 1;
   position: relative;
   overflow: hidden;
   background:
-    radial-gradient(ellipse at 50% 0%, rgba(79, 124, 255, 0.06), transparent 60%),
-    repeating-conic-gradient(#11151c 0% 25%, #0e1116 0% 50%) 0 0 / 24px 24px;
+    var(--paper-noise),
+    radial-gradient(ellipse at 50% 0%, rgba(255, 248, 230, 0.35), transparent 60%),
+    repeating-conic-gradient(#dcc9a2 0% 25%, #d3bd90 0% 50%) 0 0 / 24px 24px;
 }
 
 .editor-canvas {
@@ -1358,7 +1399,7 @@ kbd {
   border-radius: 7px;
   overflow: hidden;
   cursor: pointer;
-  background: #000;
+  background: #cbb78c;
   transition: border-color 0.15s, transform 0.15s;
 }
 
@@ -1386,7 +1427,7 @@ kbd {
   height: 8px;
   border-radius: 50%;
   background: var(--fog);
-  border: 1px solid rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(60, 40, 15, 0.55);
 }
 
 .scene-add {
@@ -2279,9 +2320,46 @@ kbd {
   font-variant-numeric: tabular-nums;
 }
 
+/* --------------------------------------------------------------------------
+   Double-ruled plates: floating panels and cards are drawn twice, like a
+   plate border inked by hand — the Atlas signature.
+   -------------------------------------------------------------------------- */
+
+.initiative-panel,
+.initiative-reference,
+.collection-panel,
+.credits-panel,
+.welcome-panel,
+.label-panel,
+.map-card {
+  outline: 1px solid color-mix(in srgb, var(--border-strong) 55%, transparent);
+  outline-offset: 3px;
+}
+
 /* -------------------------------------------------------- player view */
 
+/* The player screen deliberately keeps its own night palette: the parchment
+   chrome is for the DM's chart table, but on the TV the map is the star.
+   Re-pinning the variables here restores the dark look for everything the
+   player window renders (bars, tiles, buttons). */
 .player-view {
+  --bg: #0e1116;
+  --bg-raised: #151a22;
+  --bg-panel: #1a202b;
+  --border: #262e3c;
+  --border-strong: #374153;
+  --text: #e7ecf4;
+  --text-muted: #8b96a8;
+  --text-faint: #5c6779;
+  --accent: #4f7cff;
+  --accent-hover: #6890ff;
+  --accent-contrast: #ffffff;
+  --reveal: #ffd670;
+  --fog: #94a3ff;
+  --danger: #e5484d;
+  --ok: #46c98c;
+  --shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.6);
+
   position: fixed;
   inset: 0;
   background: #000;
