@@ -3,6 +3,7 @@
 // Scene membership is left to the caller.
 
 import type { MapRecord } from './db';
+import { randomUUID } from './uuid';
 
 const THUMB_WIDTH = 480;
 
@@ -20,7 +21,7 @@ export async function buildRecordFromBlob(image: Blob, name: string): Promise<Ma
 
   const now = Date.now();
   const record: MapRecord = {
-    id: crypto.randomUUID(),
+    id: randomUUID(),
     name,
     width: bitmap.width,
     height: bitmap.height,

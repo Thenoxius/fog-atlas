@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { addCharacter, deleteCharacter, listCharacters, updateCharacter, type Character, type CharacterStats } from './db';
 import { buildPortraitBlob } from './characterImport';
+import { randomUUID } from './uuid';
 import { loadSrdMonsters, SRD_ATTRIBUTION, type SrdMonster } from './srd';
 import { IconChevron, IconClose, IconCollection, IconPortrait, IconShield, IconTrash, IconUpload, IconUsers } from './icons';
 
@@ -90,7 +91,7 @@ export function CharacterLibrary({ onClose }: CharacterLibraryProps) {
     try {
       const portrait = newPortraitFile ? await buildPortraitBlob(newPortraitFile) : null;
       const now = Date.now();
-      await addCharacter({ id: crypto.randomUUID(), name, kind: newKind, portrait, createdAt: now, updatedAt: now });
+      await addCharacter({ id: randomUUID(), name, kind: newKind, portrait, createdAt: now, updatedAt: now });
       setNewName('');
       if (newPortraitPreview) URL.revokeObjectURL(newPortraitPreview);
       setNewPortraitFile(null);
@@ -173,7 +174,7 @@ export function CharacterLibrary({ onClose }: CharacterLibraryProps) {
     try {
       const now = Date.now();
       await addCharacter({
-        id: crypto.randomUUID(),
+        id: randomUUID(),
         name: m.name,
         kind: 'enemy',
         portrait: null,

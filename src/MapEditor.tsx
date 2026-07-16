@@ -13,6 +13,7 @@ import { MAP_FONTS, DEFAULT_FONT, LABEL_COLORS, ensureMapFontsLoaded } from './f
 import { TOKEN_ICONS, TOKEN_COLORS, DEFAULT_TOKEN_ICON, DEFAULT_TOKEN_COLOR } from './tokenIcons';
 import { openPresentChannel, type PresentMessage, type PublicInitiativeState, PRESENT_PARAM } from './present';
 import { MapPicker } from './MapPicker';
+import { randomUUID } from './uuid';
 import { InitiativeTracker } from './InitiativeTracker';
 import {
   IconBack, IconBrushRect, IconBrushRound, IconClearFog, IconExitFullscreen, IconFit, IconFog,
@@ -869,7 +870,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     let sname = sceneName;
     if (!sid) {
       // Upgrade the current solo map into a scene
-      sid = crypto.randomUUID();
+      sid = randomUUID();
       sname = mapName || 'Scene';
       await setMapScene(currentMapIdRef.current, sid, sname);
     }
@@ -935,7 +936,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       const image = imageRef.current;
       const defSize = image ? Math.round(Math.min(200, Math.max(24, image.width / 24))) : 64;
       const newLabel: MapLabel = {
-        id: crypto.randomUUID(),
+        id: randomUUID(),
         text: 'New label',
         x: mapPoint.x,
         y: mapPoint.y,
@@ -986,7 +987,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       const image = imageRef.current;
       const defSize = image ? Math.round(Math.min(160, Math.max(28, image.width / 30))) : 56;
       const newToken: MapToken = {
-        id: crypto.randomUUID(),
+        id: randomUUID(),
         icon: DEFAULT_TOKEN_ICON,
         x: mapPoint.x,
         y: mapPoint.y,
@@ -1015,7 +1016,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       }
       // Empty space -> create a new note there
       const newNote: MapNote = {
-        id: crypto.randomUUID(),
+        id: randomUUID(),
         text: '',
         x: mapPoint.x,
         y: mapPoint.y,

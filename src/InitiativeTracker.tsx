@@ -15,6 +15,7 @@ import {
   type SavedEncounterMember,
 } from './db';
 import type { PublicInitiativeState } from './present';
+import { randomUUID } from './uuid';
 import {
   IconChevron, IconChevronsLeft, IconChevronsRight, IconClose, IconCollection, IconInitiative, IconPortrait,
   IconShield, IconSkull, IconTrash, IconUsers,
@@ -340,7 +341,7 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
     if (!name || newInitiative.trim() === '') return;
     const initiative = Number(newInitiative);
     if (Number.isNaN(initiative)) return;
-    const combatant: Combatant = { id: crypto.randomUUID(), name, initiative };
+    const combatant: Combatant = { id: randomUUID(), name, initiative };
     commit({ ...encounter, combatants: [...encounter.combatants, combatant] });
     setNewName('');
     setNewInitiative('');
@@ -351,7 +352,7 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
     const isEnemy = character.kind === 'enemy';
     const name = isEnemy ? nextEnemyName(character.name, encounter.combatants) : character.name;
     const combatant: Combatant = {
-      id: crypto.randomUUID(),
+      id: randomUUID(),
       name,
       initiative: 0,
       isEnemy,
@@ -400,7 +401,7 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
     });
     const now = Date.now();
     try {
-      await saveSavedEncounter({ id: crypto.randomUUID(), name, members, createdAt: now, updatedAt: now });
+      await saveSavedEncounter({ id: randomUUID(), name, members, createdAt: now, updatedAt: now });
       setSaveName('');
       setSavedEncounters(await listSavedEncounters());
     } catch (err) {
@@ -415,7 +416,7 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
       // that's already seated; enemies always add, freshly numbered.
       if (!m.isEnemy && working.some((c) => c.name === m.name)) continue;
       const combatant: Combatant = {
-        id: crypto.randomUUID(),
+        id: randomUUID(),
         name: m.isEnemy ? nextEnemyName(m.name, working) : m.name,
         initiative: 0,
       };
@@ -457,7 +458,7 @@ export function InitiativeTracker({ onClose, onBroadcast }: InitiativeTrackerPro
     const working = [...encounter.combatants];
     for (const ch of party) {
       if (working.some((c) => c.name === ch.name)) continue;
-      const combatant: Combatant = { id: crypto.randomUUID(), name: ch.name, initiative: 0, characterId: ch.id };
+      const combatant: Combatant = { id: randomUUID(), name: ch.name, initiative: 0, characterId: ch.id };
       if (ch.stats?.hpMax != null) {
         combatant.hpMax = ch.stats.hpMax;
         combatant.hpCurrent = ch.stats.hpMax;
