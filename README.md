@@ -44,6 +44,8 @@ Opens at `http://localhost:5173`. No accounts, no API keys, no backend to config
 - **Bundled map collection** — hundreds of battle maps ready to use, plus your own uploads.
 - **Rectangle reveal** — drag a shape to reveal or fog a whole room at once, instead of only brushing it in.
 - **Initiative tracker** — add combatants by hand or from your roster, auto-sorted by initiative, with a synced turn-order bar on the player screen. Roster enemies auto-number (Goblin #1, #2…), rows show portraits and HP bars, conditions can count down in rounds, downed combatants are skipped, and whole fights can be saved as prepped encounters and loaded in one click.
+- **Measure & spell templates** (M) — drag rulers, radius circles, and 5e cones on the grid (1 cell = 5 ft), each in a pick-your-own spell color. Templates show on the player screen above the fog, so the table sees exactly what a fireball covers.
+- **Three themes** — the parchment Cartographer's Atlas (default), a warm oak-and-brass War Table, and the modern dark Slate, switchable from the library header; the player screen always keeps its clean night look.
 - **DM notes** — pin private notes anywhere on the map for your own reference; they never sync to the player screen, not even hidden under fog.
 - **Character roster** — a reusable library of player characters and enemy types with portraits and optional DM-only stat blocks (AC, HP, ability scores, freeform notes), managed from the **Characters** button in the library and loaded straight into the initiative tracker.
 - **Bundled SRD monsters** — all ~330 monster stat blocks from the D&D 5.1 System Reference Document, searchable from the Characters screen; one click copies a monster into your roster as a fully editable enemy (stats, traits, and actions prefilled).
@@ -148,6 +150,7 @@ The Fog Atlas source code is [MIT licensed](LICENSE). The bundled battle maps (f
 | `T` | Text tool (place & edit labels) |
 | `K` | Token tool (place & edit icon markers) |
 | `N` | Note tool (private, DM-only notes) |
+| `M` | Measure tool (rulers, spell radiuses, cones) |
 | `Del` | Delete the selected label, token, or note |
 | `Space` + drag, right-drag, or middle-drag | Pan |
 | Scroll | Zoom at cursor |

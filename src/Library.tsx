@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { addMap, deleteMap, getSceneMaps, listMaps, renameMap, renameScene, type MapRecord } from './db';
 import { createDemoMap } from './demo';
+import { THEMES, applyTheme, loadTheme } from './theme';
 import { buildBackup, restoreBackup } from './backup';
 import { buildRecordFromFile } from './mapImport';
 import { MapPicker } from './MapPicker';
@@ -69,6 +70,7 @@ export function Library({ onOpenMap }: LibraryProps) {
   const [backupBusy, setBackupBusy] = useState<'export' | 'restore' | null>(null);
   const [backupStatus, setBackupStatus] = useState('');
   const [demoBusy, setDemoBusy] = useState(false);
+  const [theme, setTheme] = useState(loadTheme);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const restoreInputRef = useRef<HTMLInputElement>(null);
@@ -236,6 +238,20 @@ export function Library({ onOpenMap }: LibraryProps) {
           </div>
         </div>
         <div className="header-actions">
+          <span className="theme-dots" role="group" aria-label="Theme">
+            {THEMES.map((t) => (
+              <button
+                key={t.id}
+                className={`theme-dot ${theme === t.id ? 'theme-dot-active' : ''}`}
+                style={{ background: t.swatch }}
+                title={t.name}
+                onClick={() => {
+                  setTheme(t.id);
+                  applyTheme(t.id);
+                }}
+              />
+            ))}
+          </span>
           <span className="local-badge" title="Maps and fog are stored in this browser via IndexedDB. Nothing is uploaded anywhere.">
             ● 100% local — nothing leaves this device
           </span>

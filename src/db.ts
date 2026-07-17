@@ -31,6 +31,23 @@ export interface MapToken {
   color: string;
 }
 
+/** A measurement / spell template drawn on the map: a ruler line, a radius
+ * (circle), or a 5e cone. Anchor and end point are in map pixels; distances
+ * derive from the grid cell size (1 cell = 5 ft). Shown to players too —
+ * ABOVE the fog, unlike labels/tokens: a spell effect is a live combat
+ * annotation the DM places deliberately, not prepared content to discover. */
+export interface MapShape {
+  id: string;
+  kind: 'ruler' | 'circle' | 'cone';
+  /** Ruler start / circle center / cone apex, in map pixels. */
+  x: number;
+  y: number;
+  /** Ruler end / a point on the circle / the cone's far tip. */
+  x2: number;
+  y2: number;
+  color: string;
+}
+
 /** A private note pinned to a spot on the map — for the DM's eyes only. It
  * has no size/color options and is never included in anything sent to the
  * player screen (see present.ts and PlayerView.tsx, neither of which even
@@ -177,6 +194,8 @@ export interface MapRecord {
   tokens?: MapToken[];
   /** Private DM-only notes placed on the map. Never sent to the player screen. */
   notes?: MapNote[];
+  /** Measurements / spell templates placed on the map. */
+  shapes?: MapShape[];
 }
 
 const DB_NAME = 'fog-atlas';
@@ -312,6 +331,14 @@ export async function saveTokens(id: string, tokens: MapToken[]): Promise<void> 
   const record = await getMap(id);
   if (!record) throw new Error('Map not found');
   record.tokens = tokens;
+  record.updatedAt = Date.now();
+  await withStore('readwrite', (s) => s.put(record));
+}
+
+export async function saveShapes(id: string, shapes: MapShape[]): Promise<void> {
+  const record = await getMap(id);
+  if (!record) throw new Error('Map not found');
+  record.shapes = shapes;
   record.updatedAt = Date.now();
   await withStore('readwrite', (s) => s.put(record));
 }

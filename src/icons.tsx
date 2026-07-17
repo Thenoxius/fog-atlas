@@ -231,6 +231,17 @@ export function IconChevron({ size = 18 }: IconProps) {
   );
 }
 
+export function IconRuler({ size = 18 }: IconProps) {
+  return (
+    <svg {...base(size)}>
+      <path d="M21.3 15.3 8.7 2.7a1 1 0 0 0-1.4 0L2.7 7.3a1 1 0 0 0 0 1.4l12.6 12.6a1 1 0 0 0 1.4 0l4.6-4.6a1 1 0 0 0 0-1.4Z" />
+      <path d="m7.5 10.5 2-2" />
+      <path d="m10.5 13.5 2-2" />
+      <path d="m13.5 16.5 2-2" />
+    </svg>
+  );
+}
+
 export function IconShield({ size = 18 }: IconProps) {
   return (
     <svg {...base(size)}>

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  addMap, getMap, getSceneMaps, saveFog, saveGridSettings, saveLabels, saveNotes, saveTokens, setMapScene,
-  type GridSettings, type GridType, type MapLabel, type MapNote, type MapRecord, type MapToken,
+  addMap, getMap, getSceneMaps, saveFog, saveGridSettings, saveLabels, saveNotes, saveShapes, saveTokens, setMapScene,
+  type GridSettings, type GridType, type MapLabel, type MapNote, type MapRecord, type MapShape, type MapToken,
 } from './db';
+import { drawShapes, hitTestShape, SHAPE_COLORS, DEFAULT_SHAPE_COLOR } from './shapes';
 import {
   buildGridPath, strokeGrid, GRID_MIN_SIZE, GRID_MAX_SIZE, type GridConfig,
 } from './grid';
@@ -18,7 +19,7 @@ import { InitiativeTracker } from './InitiativeTracker';
 import {
   IconBack, IconBrushRect, IconBrushRound, IconClearFog, IconExitFullscreen, IconFit, IconFog,
   IconFogAll, IconFullscreen, IconGridOff, IconHexGrid, IconInitiative, IconLayers, IconNote, IconPresent,
-  IconReveal, IconSave, IconSquareGrid, IconText, IconToken, IconTrash, IconUndo,
+  IconReveal, IconRuler, IconSave, IconSquareGrid, IconText, IconToken, IconTrash, IconUndo,
 } from './icons';
 
 interface MapEditorProps {
@@ -26,7 +27,8 @@ interface MapEditorProps {
   onBack: () => void;
 }
 
-type Tool = 'reveal' | 'fog' | 'text' | 'token' | 'note';
+type Tool = 'reveal' | 'fog' | 'text' | 'token' | 'note' | 'measure';
+type ShapeKind = MapShape['kind'];
 type FogShape = 'brush' | 'rect';
 type SaveState = 'saved' | 'unsaved' | 'saving';
 /** Screen-pixel radius of the label/token resize handle hit area. */
@@ -121,6 +123,23 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
   const tokensSaveTimerRef = useRef(0);
   const selectedToken = tokens.find((t) => t.id === selectedTokenId) ?? null;
 
+  // Measurements / spell templates (rulers, radius circles, 5e cones)
+  const [shapes, setShapes] = useState<MapShape[]>([]);
+  const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
+  const shapesRef = useRef<MapShape[]>([]);
+  shapesRef.current = shapes;
+  const selectedShapeIdRef = useRef<string | null>(null);
+  selectedShapeIdRef.current = selectedShapeId;
+  const [shapeKind, setShapeKind] = useState<ShapeKind>('ruler');
+  const shapeKindRef = useRef<ShapeKind>('ruler');
+  shapeKindRef.current = shapeKind;
+  const [shapeColor, setShapeColor] = useState(DEFAULT_SHAPE_COLOR);
+  const shapeColorRef = useRef(shapeColor);
+  shapeColorRef.current = shapeColor;
+  const drawingShapeRef = useRef<MapShape | null>(null);
+  const shapesDirtyRef = useRef(false);
+  const shapesSaveTimerRef = useRef(0);
+
   // DM-only notes — never broadcast to the player screen (see notes.ts)
   const [notes, setNotes] = useState<MapNote[]>([]);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
@@ -188,6 +207,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       grid: currentGrid(),
       labels: labelsRef.current,
       tokens: tokensRef.current,
+      shapes: shapesRef.current,
     } satisfies PresentMessage);
   }, [currentGrid]);
 
@@ -212,6 +232,14 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       type: 'tokens',
       mapId: currentMapIdRef.current,
       tokens: tokensRef.current,
+    } satisfies PresentMessage);
+  }, []);
+
+  const postShapes = useCallback(() => {
+    channelRef.current?.postMessage({
+      type: 'shapes',
+      mapId: currentMapIdRef.current,
+      shapes: shapesRef.current,
     } satisfies PresentMessage);
   }, []);
 
@@ -304,6 +332,19 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     // DM-only note markers — always visible on this screen, never sent to the player
     const notesToDraw = notesRef.current;
     if (notesToDraw.length) drawNoteMarkers(ctx, notesToDraw, scale);
+
+    // Measurements / spell templates, including the one being dragged out
+    const inProgress = drawingShapeRef.current;
+    const shapesToDraw = inProgress ? [...shapesRef.current, inProgress] : shapesRef.current;
+    if (shapesToDraw.length) {
+      drawShapes(
+        ctx,
+        shapesToDraw,
+        gridSizeRef.current,
+        scale,
+        toolRef.current === 'measure' ? selectedShapeIdRef.current : null
+      );
+    }
 
     // Selection box + resize handle for the selected label
     const selId = selectedLabelIdRef.current;
@@ -545,6 +586,41 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     setSelectedTokenId(null);
   }, [commitTokens]);
 
+  /* ------------------------------------------------------------- shapes */
+
+  const flushShapes = useCallback(async () => {
+    if (!shapesDirtyRef.current) return;
+    window.clearTimeout(shapesSaveTimerRef.current);
+    await saveShapes(currentMapIdRef.current, shapesRef.current);
+    shapesDirtyRef.current = false;
+  }, []);
+
+  // Update the shape array: redraw, debounce-save, and stream to the player
+  const commitShapes = useCallback((next: MapShape[]) => {
+    shapesRef.current = next;
+    setShapes(next);
+    shapesDirtyRef.current = true;
+    if (presentingRef.current) postShapes();
+    scheduleDraw();
+    window.clearTimeout(shapesSaveTimerRef.current);
+    shapesSaveTimerRef.current = window.setTimeout(() => {
+      saveShapes(currentMapIdRef.current, shapesRef.current)
+        .then(() => { shapesDirtyRef.current = false; })
+        .catch(console.error);
+    }, 500);
+  }, [postShapes, scheduleDraw]);
+
+  const deleteShape = useCallback((id: string) => {
+    commitShapes(shapesRef.current.filter((s) => s.id !== id));
+    setSelectedShapeId(null);
+  }, [commitShapes]);
+
+  // Shape selection only means something inside the measure tool; dropping it
+  // on tool switch keeps Del pointed at the newly selected label/token/note.
+  useEffect(() => {
+    if (tool !== 'measure') setSelectedShapeId(null);
+  }, [tool]);
+
   /* -------------------------------------------------------------- notes */
   // Notes are DM-only: unlike labels/tokens, commitNotes never posts to the
   // present channel — there is no wire message for notes at all.
@@ -670,6 +746,12 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       setNotes(loadedNotes);
       setSelectedNoteId(null);
       notesDirtyRef.current = false;
+      const loadedShapes = record.shapes ?? [];
+      shapesRef.current = loadedShapes;
+      setShapes(loadedShapes);
+      setSelectedShapeId(null);
+      drawingShapeRef.current = null;
+      shapesDirtyRef.current = false;
       setGridType(record.gridType ?? 'none');
       setGridSize(record.gridSize ?? 100);
       setGridOffsetX(record.gridOffsetX ?? 0);
@@ -1030,6 +1112,34 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       return;
     }
 
+    if (toolRef.current === 'measure') {
+      const scale = viewRef.current.scale;
+      const mapPoint = screenToMap(sx, sy);
+
+      // Hit an existing shape -> select it (Del removes, panel shows info)
+      const hitId = hitTestShape(shapesRef.current, mapPoint.x, mapPoint.y, scale);
+      if (hitId) {
+        setSelectedShapeId(hitId);
+        selectedShapeIdRef.current = hitId;
+        scheduleDraw();
+        return;
+      }
+      // Empty space -> start dragging out a new shape
+      setSelectedShapeId(null);
+      selectedShapeIdRef.current = null;
+      drawingShapeRef.current = {
+        id: randomUUID(),
+        kind: shapeKindRef.current,
+        x: mapPoint.x,
+        y: mapPoint.y,
+        x2: mapPoint.x,
+        y2: mapPoint.y,
+        color: shapeColorRef.current,
+      };
+      scheduleDraw();
+      return;
+    }
+
     if (fogShapeRef.current === 'rect') {
       const mapPoint = screenToMap(sx, sy);
       pushUndo();
@@ -1124,6 +1234,18 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       return;
     }
 
+    if (toolRef.current === 'measure') {
+      const shape = drawingShapeRef.current;
+      if (shape) {
+        const mp = screenToMap(sx, sy);
+        shape.x2 = mp.x;
+        shape.y2 = mp.y;
+        // Live preview only — the shape streams to players once dropped
+        scheduleDraw();
+      }
+      return;
+    }
+
     if (paintingRef.current && lastPointRef.current) {
       const mapPoint = screenToMap(sx, sy);
       paintSegment(lastPointRef.current, mapPoint);
@@ -1144,6 +1266,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     const tokenChanged = !!(draggingTokenRef.current || resizingTokenRef.current);
     const noteChanged = !!draggingNoteRef.current;
     const rectDrag = rectDragRef.current;
+    const drawnShape = drawingShapeRef.current;
     paintingRef.current = false;
     panningRef.current = false;
     lastPointRef.current = null;
@@ -1153,6 +1276,14 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     resizingTokenRef.current = null;
     draggingNoteRef.current = null;
     rectDragRef.current = null;
+    drawingShapeRef.current = null;
+
+    // Drop the dragged-out measurement (ignore accidental clicks)
+    if (drawnShape && Math.hypot(drawnShape.x2 - drawnShape.x, drawnShape.y2 - drawnShape.y) > 4) {
+      commitShapes([...shapesRef.current, drawnShape]);
+      setSelectedShapeId(drawnShape.id);
+      selectedShapeIdRef.current = drawnShape.id;
+    }
 
     let wasRectApplied = false;
     if (rectDrag) {
@@ -1213,6 +1344,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
     await flushLabels().catch(console.error);
     await flushTokens().catch(console.error);
     await flushNotes().catch(console.error);
+    await flushShapes().catch(console.error);
     onBack();
   };
 
@@ -1234,6 +1366,8 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
         setTool('token');
       } else if (e.key === 'n' || e.key === 'N') {
         setTool('note');
+      } else if (e.key === 'm' || e.key === 'M') {
+        setTool('measure');
       } else if (e.key === 'b' || e.key === 'B') {
         setFogShape((s) => (s === 'brush' ? 'rect' : 'brush'));
       } else if (e.key === '[') {
@@ -1248,6 +1382,10 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
         setSelectedLabelId(null);
         setSelectedTokenId(null);
         setSelectedNoteId(null);
+        setSelectedShapeId(null);
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedShapeIdRef.current) {
+        e.preventDefault();
+        deleteShape(selectedShapeIdRef.current);
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedLabelIdRef.current) {
         e.preventDefault();
         deleteLabel(selectedLabelIdRef.current);
@@ -1274,7 +1412,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [fitToScreen, save, undo, deleteLabel, deleteToken, deleteNote]);
+  }, [fitToScreen, save, undo, deleteLabel, deleteToken, deleteNote, deleteShape]);
 
   // Leaving the text/token tool clears the selection (so the selection box
   // disappears and fog painting isn't blocked)
@@ -1345,6 +1483,14 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
           >
             <IconNote />
             Note
+          </button>
+          <button
+            className={`btn tool-btn ${tool === 'measure' ? 'tool-active-measure' : 'btn-ghost'}`}
+            onClick={() => setTool('measure')}
+            title="Measure — drag rulers, spell radiuses, and cones on the grid (M)"
+          >
+            <IconRuler />
+            Measure
           </button>
         </div>
 
@@ -1548,7 +1694,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
             className="editor-canvas"
             style={{
               cursor:
-                tool === 'text' || tool === 'token' || tool === 'note' || ((tool === 'reveal' || tool === 'fog') && fogShape === 'rect')
+                tool === 'text' || tool === 'token' || tool === 'note' || tool === 'measure' || ((tool === 'reveal' || tool === 'fog') && fogShape === 'rect')
                   ? 'crosshair'
                   : 'none',
             }}
@@ -1698,6 +1844,71 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
           )
         )}
 
+        {tool === 'measure' && !loading && (
+          <div className="label-panel measure-panel">
+            <div className="measure-kinds" role="group" aria-label="Template shape">
+              {([
+                ['ruler', 'Ruler', 'Distance between two points'],
+                ['circle', 'Radius', 'Circle spells — fireball, spirit guardians'],
+                ['cone', 'Cone', '5e cone — as wide at the end as it is long'],
+              ] as const).map(([kind, name, hint]) => (
+                <button
+                  key={kind}
+                  className={`btn btn-sm ${shapeKind === kind ? 'btn-secondary measure-kind-active' : 'btn-ghost'}`}
+                  onClick={() => setShapeKind(kind)}
+                  title={hint}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+            <div className="label-row measure-swatches">
+              {SHAPE_COLORS.map((c) => (
+                <button
+                  key={c}
+                  className={`label-swatch ${shapeColor === c ? 'label-swatch-active' : ''}`}
+                  style={{ background: c }}
+                  onClick={() => {
+                    setShapeColor(c);
+                    // Recolor the selected template too, so a dropped shape
+                    // can still be adjusted
+                    if (selectedShapeIdRef.current) {
+                      commitShapes(
+                        shapesRef.current.map((s) =>
+                          s.id === selectedShapeIdRef.current ? { ...s, color: c } : s
+                        )
+                      );
+                    }
+                  }}
+                  title="Template color"
+                />
+              ))}
+            </div>
+            <div className="label-row">
+              <span className="note-privacy-hint">1 cell = 5 ft · shown to players above the fog</span>
+            </div>
+            <div className="label-row">
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => selectedShapeIdRef.current && deleteShape(selectedShapeIdRef.current)}
+                disabled={!selectedShapeId}
+                title="Delete the selected template (Del)"
+              >
+                <IconTrash size={15} />
+                Selected
+              </button>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => commitShapes([])}
+                disabled={shapes.length === 0}
+                title="Remove all measurements from this map"
+              >
+                Clear all
+              </button>
+            </div>
+          </div>
+        )}
+
         {initiativeOpen && (
           <InitiativeTracker onClose={() => setInitiativeOpen(false)} onBroadcast={handleInitiativeBroadcast} />
         )}
@@ -1729,7 +1940,7 @@ export function MapEditor({ mapId, onBack }: MapEditorProps) {
       </div>
 
       <footer className="editor-statusbar">
-        <span><kbd>R</kbd> reveal · <kbd>F</kbd> fog · <kbd>B</kbd> brush/rectangle · <kbd>[</kbd><kbd>]</kbd> brush size · <kbd>G</kbd> grid · <kbd>T</kbd> text · <kbd>K</kbd> token · <kbd>N</kbd> note · <kbd>Del</kbd> delete selected · <kbd>Space</kbd>+drag or right-drag to pan · scroll to zoom · <kbd>0</kbd> fit · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Ctrl</kbd>+<kbd>S</kbd> save</span>
+        <span><kbd>R</kbd> reveal · <kbd>F</kbd> fog · <kbd>B</kbd> brush/rectangle · <kbd>[</kbd><kbd>]</kbd> brush size · <kbd>G</kbd> grid · <kbd>T</kbd> text · <kbd>K</kbd> token · <kbd>N</kbd> note · <kbd>M</kbd> measure · <kbd>Del</kbd> delete selected · <kbd>Space</kbd>+drag or right-drag to pan · scroll to zoom · <kbd>0</kbd> fit · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Ctrl</kbd>+<kbd>S</kbd> save</span>
       </footer>
 
       {pickerOpen && (

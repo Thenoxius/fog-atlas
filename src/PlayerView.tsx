@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
-import { getCharacter, getMap, type MapLabel, type MapToken } from './db';
+import { getCharacter, getMap, type MapLabel, type MapShape, type MapToken } from './db';
+import { drawShapes } from './shapes';
 import { buildGridPath, strokeGrid, type GridConfig } from './grid';
 import { drawLabels } from './labels';
 import { drawTokens } from './tokens';
@@ -130,6 +131,7 @@ export function PlayerView() {
   const gridRef = useRef<GridConfig>(NO_GRID);
   const labelsRef = useRef<MapLabel[]>([]);
   const tokensRef = useRef<MapToken[]>([]);
+  const shapesRef = useRef<MapShape[]>([]);
   const currentMapIdRef = useRef<string | null>(null);
   const genRef = useRef(0);
   const rafRef = useRef(0);
@@ -243,6 +245,12 @@ export function PlayerView() {
         fogPrevRef.current = null;
         fogFadeStartRef.current = 0;
       }
+    }
+
+    // Measurements / spell templates — above the fog on purpose: the DM
+    // places these live, for the players, during combat.
+    if (shapesRef.current.length) {
+      drawShapes(ctx, shapesRef.current, gridRef.current.gridSize, scale);
     }
 
     // Highlight ring — the DM's pointer, for calling attention to the board
@@ -363,6 +371,7 @@ export function PlayerView() {
     channel.onmessage = (e: MessageEvent<PresentMessage>) => {
       const msg = e.data;
       if (msg.type === 'scene') {
+        shapesRef.current = msg.shapes ?? [];
         loadMap(msg.mapId, msg.grid, msg.labels, msg.tokens).catch(console.error);
       } else if (msg.type === 'fog') {
         if (msg.mapId !== currentMapIdRef.current) {
@@ -385,6 +394,10 @@ export function PlayerView() {
         if (msg.mapId !== currentMapIdRef.current) return;
         tokensRef.current = msg.tokens;
         scheduleDraw();
+      } else if (msg.type === 'shapes') {
+        if (msg.mapId !== currentMapIdRef.current) return;
+        shapesRef.current = msg.shapes;
+        scheduleDraw();
       } else if (msg.type === 'initiative') {
         setInitiative(msg.state);
       } else if (msg.type === 'stopped') {
@@ -397,6 +410,7 @@ export function PlayerView() {
         fogFadeStartRef.current = 0;
         labelsRef.current = [];
         tokensRef.current = [];
+        shapesRef.current = [];
         currentMapIdRef.current = null;
         setInitiative(null);
         scheduleDraw();

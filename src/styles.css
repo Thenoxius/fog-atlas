@@ -31,6 +31,92 @@
   --font: -apple-system, "Segoe UI", system-ui, Roboto, "Helvetica Neue", sans-serif;
   --font-display: 'IM Fell English SC', 'Palatino Linotype', Georgia, serif;
   --font-caps: 'Cinzel', 'Palatino Linotype', Georgia, serif;
+
+  /* Theme-drivable surfaces: full page background stack, the checkered
+     "desk" behind the editor canvas, and the brand icon's second stop. */
+  --page-bg:
+    var(--paper-noise),
+    radial-gradient(ellipse at 50% -10%, rgba(255, 250, 235, 0.5), transparent 55%),
+    radial-gradient(ellipse at 50% 115%, rgba(96, 66, 24, 0.2), transparent 65%),
+    linear-gradient(160deg, #e9d8b6, #d9c294);
+  --desk-a: #dcc9a2;
+  --desk-b: #d3bd90;
+  --desk-glow: rgba(255, 248, 230, 0.35);
+  --brand-grad-2: #1f3a55;
+}
+
+/* --------------------------------------------------------------------------
+   Themes. The default (no attribute / "atlas") is the Cartographer's Atlas
+   above; "war-table" is a warm dark of oak, leather, and brass; "slate" is
+   the original modern dark. The player screen ignores all of this — its
+   night palette is re-pinned inside .player-view.
+   -------------------------------------------------------------------------- */
+
+[data-theme="war-table"] {
+  --bg: #1b120b;
+  --bg-raised: #241710;
+  --bg-panel: #2b1c11;
+  --border: #40301d;
+  --border-strong: #59422a;
+  --text: #eee0c6;
+  --text-muted: #a8916c;
+  --text-faint: #7d6a4e;
+  --accent: #b58c47;
+  --accent-hover: #caa057;
+  --accent-contrast: #241503;
+  --seal: #a33d2a;
+  --reveal: #d8b26e;
+  --fog: #8d86b8;
+  --danger: #c65438;
+  --ok: #7fae62;
+  --shadow: 0 14px 30px -14px rgba(0, 0, 0, 0.6);
+  --page-bg:
+    var(--paper-noise),
+    radial-gradient(ellipse at 50% -10%, rgba(255, 190, 110, 0.1), transparent 55%),
+    linear-gradient(160deg, #20150c, #170e07);
+  --desk-a: #241710;
+  --desk-b: #1d120a;
+  --desk-glow: rgba(255, 190, 110, 0.05);
+  --brand-grad-2: #6d4a1f;
+}
+
+[data-theme="slate"] {
+  --bg: #0e1116;
+  --bg-raised: #151a22;
+  --bg-panel: #1a202b;
+  --border: #262e3c;
+  --border-strong: #374153;
+  --text: #e7ecf4;
+  --text-muted: #8b96a8;
+  --text-faint: #5c6779;
+  --accent: #4f7cff;
+  --accent-hover: #6890ff;
+  --accent-contrast: #ffffff;
+  --seal: #e5484d;
+  --reveal: #ffd670;
+  --fog: #94a3ff;
+  --danger: #e5484d;
+  --ok: #46c98c;
+  --shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.6);
+  --page-bg: linear-gradient(#0e1116, #0e1116);
+  --desk-a: #11151c;
+  --desk-b: #0e1116;
+  --desk-glow: rgba(79, 124, 255, 0.06);
+  --brand-grad-2: #7a5cff;
+}
+
+/* Slate is the "modern" look: system type, no fleuron, tighter headings. */
+[data-theme="slate"] h1,
+[data-theme="slate"] h2,
+[data-theme="slate"] h3,
+[data-theme="slate"] h4 {
+  font-family: var(--font);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+[data-theme="slate"] .brand h1::after {
+  content: none;
 }
 
 * {
@@ -45,11 +131,7 @@ body,
 }
 
 body {
-  background:
-    var(--paper-noise),
-    radial-gradient(ellipse at 50% -10%, rgba(255, 250, 235, 0.5), transparent 55%),
-    radial-gradient(ellipse at 50% 115%, rgba(96, 66, 24, 0.2), transparent 65%),
-    linear-gradient(160deg, #e9d8b6, #d9c294);
+  background: var(--page-bg);
   background-attachment: fixed;
   color: var(--text);
   font-family: var(--font);
@@ -172,8 +254,8 @@ h3, h4 {
   width: 44px;
   height: 44px;
   border-radius: 12px;
-  background: linear-gradient(135deg, var(--accent), #1f3a55);
-  color: #f6edd6;
+  background: linear-gradient(135deg, var(--accent), var(--brand-grad-2));
+  color: var(--accent-contrast);
   box-shadow: 0 4px 18px -4px color-mix(in srgb, var(--accent) 60%, transparent);
 }
 
@@ -200,6 +282,31 @@ h3, h4 {
   align-items: center;
   gap: 16px;
   flex-wrap: wrap;
+}
+
+.theme-dots {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.theme-dot {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 999px;
+  border: 2px solid color-mix(in srgb, var(--text) 25%, transparent);
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.2s, border-color 0.2s;
+}
+
+.theme-dot:hover {
+  transform: scale(1.15);
+}
+
+.theme-dot-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
 .local-badge {
@@ -1102,6 +1209,33 @@ h3, h4 {
   box-shadow: 0 0 12px color-mix(in srgb, #94a3b8 25%, transparent);
 }
 
+.tool-active-measure {
+  background: color-mix(in srgb, #f08c2e 16%, transparent);
+  color: #c96f14;
+  border-color: color-mix(in srgb, #f08c2e 45%, transparent);
+  box-shadow: 0 0 12px color-mix(in srgb, #f08c2e 25%, transparent);
+}
+
+/* Measure panel: shape kind selector + spell-color swatches */
+.measure-panel {
+  width: 260px;
+}
+
+.measure-kinds {
+  display: flex;
+  gap: 6px;
+}
+
+.measure-kinds .btn {
+  flex: 1;
+  justify-content: center;
+}
+
+.measure-swatches {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .tool-active-shape {
   background: color-mix(in srgb, #5eead4 16%, transparent);
   color: #5eead4;
@@ -1317,16 +1451,16 @@ input[type='range'] {
 .save-saving { color: var(--text-muted); }
 .save-unsaved { color: var(--reveal); }
 
-/* The desk around the chart: parchment checker keeps the transparency
-   affordance, warm light falls from above. */
+/* The desk around the chart: a checker keeps the transparency affordance,
+   with a soft light from above — both in the active theme's tones. */
 .editor-canvas-wrap {
   flex: 1;
   position: relative;
   overflow: hidden;
   background:
     var(--paper-noise),
-    radial-gradient(ellipse at 50% 0%, rgba(255, 248, 230, 0.35), transparent 60%),
-    repeating-conic-gradient(#dcc9a2 0% 25%, #d3bd90 0% 50%) 0 0 / 24px 24px;
+    radial-gradient(ellipse at 50% 0%, var(--desk-glow), transparent 60%),
+    repeating-conic-gradient(var(--desk-a) 0% 25%, var(--desk-b) 0% 50%) 0 0 / 24px 24px;
 }
 
 .editor-canvas {
