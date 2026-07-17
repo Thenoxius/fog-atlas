@@ -27,6 +27,8 @@ const NO_GRID: GridConfig = {
 const MIN_SCALE = 0.05;
 const MAX_SCALE = 12;
 const HIGHLIGHT_RADIUS = 22;
+/** How long freshly revealed areas take to melt out of the fog. */
+const FOG_FADE_MS = 550;
 
 // Persisted per-device, not synced from the DM: a table-mounted TV keeps its
 // own physical orientation regardless of who's presenting, so these survive
@@ -121,6 +123,10 @@ export function PlayerView() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<ImageBitmap | null>(null);
   const fogRef = useRef<ImageBitmap | null>(null);
+  // Fog dissolve: when fresh fog arrives, the previous state lingers on top
+  // and fades out, so reveals melt away like mist instead of snapping.
+  const fogPrevRef = useRef<HTMLCanvasElement | null>(null);
+  const fogFadeStartRef = useRef(0);
   const gridRef = useRef<GridConfig>(NO_GRID);
   const labelsRef = useRef<MapLabel[]>([]);
   const tokensRef = useRef<MapToken[]>([]);
@@ -215,9 +221,29 @@ export function PlayerView() {
     );
     if (path) strokeGrid(ctx, path, scale, grid.gridLineWidth, grid.gridOpacity, image.width, image.height);
 
-    // Fog is fully opaque for players — solid black over hidden areas
+    // Fog is fully opaque for players — solid black over hidden areas. A
+    // just-replaced fog state lingers on top at fading alpha, so newly
+    // revealed ground dissolves into view over FOG_FADE_MS.
     const fog = fogRef.current;
     if (fog) ctx.drawImage(fog, 0, 0);
+    const prevFog = fogPrevRef.current;
+    if (prevFog && fogFadeStartRef.current) {
+      const t = Math.min(1, (performance.now() - fogFadeStartRef.current) / FOG_FADE_MS);
+      if (t < 1) {
+        ctx.globalAlpha = 1 - t * (2 - t); // ease-out
+        ctx.drawImage(prevFog, 0, 0);
+        ctx.globalAlpha = 1;
+        if (!rafRef.current) {
+          rafRef.current = requestAnimationFrame(() => {
+            rafRef.current = 0;
+            draw();
+          });
+        }
+      } else {
+        fogPrevRef.current = null;
+        fogFadeStartRef.current = 0;
+      }
+    }
 
     // Highlight ring — the DM's pointer, for calling attention to the board
     const cursor = cursorRef.current;
@@ -250,6 +276,33 @@ export function PlayerView() {
     });
   }, [draw]);
 
+  // Capture the fog exactly as players currently see it (including a fade
+  // still in flight) so the next fade continues seamlessly from that state.
+  const snapshotFogForFade = useCallback(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const image = imageRef.current;
+    const fog = fogRef.current;
+    // Nothing on screen to fade from (fresh map, or fog being applied for
+    // the first time) — let the new fog appear instantly.
+    if (!image || !fog) return;
+    const snap = document.createElement('canvas');
+    snap.width = image.width;
+    snap.height = image.height;
+    const sctx = snap.getContext('2d')!;
+    sctx.drawImage(fog, 0, 0);
+    const prev = fogPrevRef.current;
+    if (prev && fogFadeStartRef.current) {
+      const t = Math.min(1, (performance.now() - fogFadeStartRef.current) / FOG_FADE_MS);
+      if (t < 1) {
+        sctx.globalAlpha = 1 - t * (2 - t);
+        sctx.drawImage(prev, 0, 0);
+        sctx.globalAlpha = 1;
+      }
+    }
+    fogPrevRef.current = snap;
+    fogFadeStartRef.current = performance.now();
+  }, []);
+
   const fitToWindow = useCallback(() => {
     const canvas = canvasRef.current;
     const image = imageRef.current;
@@ -275,6 +328,8 @@ export function PlayerView() {
       currentMapIdRef.current = mapId;
       fogRef.current?.close();
       fogRef.current = null;
+      fogPrevRef.current = null;
+      fogFadeStartRef.current = 0;
       gridRef.current = grid;
       labelsRef.current = labels;
       tokensRef.current = tokens;
@@ -314,6 +369,7 @@ export function PlayerView() {
           msg.bitmap.close();
           return;
         }
+        snapshotFogForFade();
         fogRef.current?.close();
         fogRef.current = msg.bitmap;
         scheduleDraw();
@@ -337,6 +393,8 @@ export function PlayerView() {
         imageRef.current = null;
         fogRef.current?.close();
         fogRef.current = null;
+        fogPrevRef.current = null;
+        fogFadeStartRef.current = 0;
         labelsRef.current = [];
         tokensRef.current = [];
         currentMapIdRef.current = null;
@@ -347,7 +405,7 @@ export function PlayerView() {
     // Announce readiness so the DM pushes the current state
     channel.postMessage({ type: 'hello' } satisfies PresentMessage);
     return () => channel.close();
-  }, [loadMap, scheduleDraw]);
+  }, [loadMap, scheduleDraw, snapshotFogForFade]);
 
   // Size the canvas to the window
   useEffect(() => {

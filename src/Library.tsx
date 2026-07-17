@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { addMap, deleteMap, getSceneMaps, listMaps, renameMap, renameScene, type MapRecord } from './db';
+import { createDemoMap } from './demo';
 import { buildBackup, restoreBackup } from './backup';
 import { buildRecordFromFile } from './mapImport';
 import { MapPicker } from './MapPicker';
@@ -67,6 +68,7 @@ export function Library({ onOpenMap }: LibraryProps) {
   const [welcomeOpen, setWelcomeOpen] = useState(() => !localStorage.getItem(WELCOME_SEEN_KEY));
   const [backupBusy, setBackupBusy] = useState<'export' | 'restore' | null>(null);
   const [backupStatus, setBackupStatus] = useState('');
+  const [demoBusy, setDemoBusy] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const restoreInputRef = useRef<HTMLInputElement>(null);
@@ -75,6 +77,24 @@ export function Library({ onOpenMap }: LibraryProps) {
   const dismissWelcome = () => {
     localStorage.setItem(WELCOME_SEEN_KEY, '1');
     setWelcomeOpen(false);
+  };
+
+  // One-click demo: a collection map with fog half-revealed, grid aligned,
+  // tokens and a label in the clearing — the product explains itself.
+  const handleTryDemo = async () => {
+    setDemoBusy(true);
+    setUploadError('');
+    try {
+      const id = await createDemoMap();
+      localStorage.setItem(WELCOME_SEEN_KEY, '1');
+      setWelcomeOpen(false);
+      onOpenMap(id);
+    } catch (err) {
+      console.error(err);
+      setWelcomeOpen(false);
+      setUploadError('The demo map is unavailable in this build — import a map of your own instead.');
+    }
+    setDemoBusy(false);
   };
 
   // Everything lives in this browser's storage, so a downloadable archive is
@@ -272,6 +292,10 @@ export function Library({ onOpenMap }: LibraryProps) {
               <IconUpload />
               Import your first map
             </button>
+            <button className="btn btn-secondary" onClick={handleTryDemo} disabled={demoBusy}>
+              <IconMap />
+              {demoBusy ? 'Preparing the demo…' : 'Try the demo map'}
+            </button>
             <p className="hint">…or drop image files anywhere on this page</p>
           </div>
         ) : (
@@ -428,9 +452,14 @@ export function Library({ onOpenMap }: LibraryProps) {
               Run a second screen for your players, group several maps into one scene, and
               everything is saved automatically on this device — no accounts, no cloud.
             </p>
-            <button className="btn btn-primary welcome-cta" onClick={dismissWelcome}>
-              Start preparing
-            </button>
+            <div className="welcome-actions">
+              <button className="btn btn-primary welcome-cta" onClick={handleTryDemo} disabled={demoBusy}>
+                {demoBusy ? 'Preparing the demo…' : 'Try the demo map'}
+              </button>
+              <button className="btn btn-secondary welcome-cta" onClick={dismissWelcome} disabled={demoBusy}>
+                Start with my own maps
+              </button>
+            </div>
             <p className="welcome-support">
               Fog Atlas is free. If it earns a place at your table,{' '}
               <a href={KOFI_URL} target="_blank" rel="noreferrer">a coffee on Ko-fi</a> is
